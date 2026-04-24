@@ -1,0 +1,72 @@
+# ===================================================================
+# 로컬 개발 프로파일 (Docker Compose 기반)
+# 실행 전제: docker-compose.yml 의 mysql(3307), redis(6379) 컨테이너 기동
+# 시크릿은 환경변수로 주입, 없으면 .env 와 동일한 기본값 사용
+# ===================================================================
+
+spring:
+  # -----------------------------
+  # MySQL DataSource
+  # -----------------------------
+  # 호스트 포트 3307 → 컨테이너 3306 (로컬 MySQL 과 충돌 회피 목적)
+  datasource:
+    url: jdbc:mysql://localhost:3307/${MYSQL_DATABASE:usedtrade}?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:usedtrade_user}
+    password: ${MYSQL_PASSWORD:usedtrade1234!}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 커넥션 풀 설정 (HikariCP : Spring Boot 기본)
+      maximum-pool-size: 10                # 로컬은 크게 필요 없음
+      minimum-idle: 2
+      connection-timeout: 10000            # 10s
+      idle-timeout: 600000                 # 10m
+      max-lifetime: 1800000                # 30m
+      pool-name: UsedTradeHikariCP
+
+  # -----------------------------
+  # JPA / Hibernate
+  # -----------------------------
+  jpa:
+    hibernate:
+      # 로컬 개발 편의: update (스키마 자동 반영)
+      # ※ 운영에서는 절대 update/create 금지 → validate + Flyway/Liquibase
+      ddl-auto: update
+    show-sql: true                         # 콘솔에 SQL 출력
+    properties:
+      hibernate:
+        format_sql: true                   # SQL 보기 좋게 포매팅
+        highlight_sql: true                # ANSI 컬러
+        use_sql_comments: true             # JPQL 힌트 주석 포함
+        jdbc:
+          time_zone: Asia/Seoul
+          batch_size: 50                   # 배치 INSERT/UPDATE
+        order_inserts: true
+        order_updates: true
+        default_batch_fetch_size: 100      # N+1 방어 (IN 쿼리로 묶기)
+    open-in-view: false                    # OSIV 끄기 (트랜잭션 경계 명확화)
+
+  # -----------------------------
+  # Redis
+  # -----------------------------
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ${REDIS_PASSWORD:redis1234!}
+      timeout: 2000ms
+      connect-timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 1000ms
+
+# -----------------------------
+# 개발 편의 설정
+# -----------------------------
+logging:
+  level:
+    org.hibernate.SQL: DEBUG               # SQL 로그
+    org.hibernate.orm.jdbc.bind: TRACE     # 파라미터 바인딩 값까지 (Hibernate 6+)
+    org.springframework.data.redis: DEBUG

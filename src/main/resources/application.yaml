@@ -1,0 +1,61 @@
+# ===================================================================
+# 공통 설정 (모든 프로파일에서 공유)
+# 프로파일별 세부 설정은 application-{profile}.yaml 에 분리
+#   - application-local.yaml : 로컬 개발 (Docker Compose)
+#   - application-prod.yaml  : 운영 배포 (AWS)
+# ===================================================================
+
+spring:
+  application:
+    name: used-trade
+
+  # 기본 활성 프로파일: local
+  # 운영에서는 실행 시 --spring.profiles.active=prod 로 override
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  # Jackson (JSON 직렬화) 설정
+  jackson:
+    time-zone: Asia/Seoul
+    date-format: yyyy-MM-dd'T'HH:mm:ss
+    default-property-inclusion: non_null   # null 필드는 응답에서 제외
+    serialization:
+      write-dates-as-timestamps: false     # LocalDateTime -> ISO-8601 문자열
+      fail-on-empty-beans: false
+
+server:
+  port: 8080
+  shutdown: graceful                       # 종료 시 진행 중인 요청 처리 후 종료
+  error:
+    include-message: always                # 에러 응답에 메시지 포함
+    include-binding-errors: always
+    include-stacktrace: never              # 스택트레이스는 응답에 노출 금지
+    include-exception: false
+
+# Graceful shutdown 타임아웃
+spring.lifecycle:
+  timeout-per-shutdown-phase: 20s
+
+# Actuator (운영 모니터링 엔드포인트)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics        # 최소 노출, 필요시 추가
+  endpoint:
+    health:
+      show-details: when-authorized         # health 상세는 인증된 요청에만
+  info:
+    java:
+      enabled: true
+    os:
+      enabled: true
+
+# 로깅
+logging:
+  level:
+    root: INFO
+    com.portfolio.used_trade: DEBUG         # 프로젝트 패키지는 상세 로그
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

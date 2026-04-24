@@ -1,0 +1,56 @@
+# ===================================================================
+# 운영 프로파일 (AWS 배포용 - Phase 2 에서 채울 템플릿)
+# 모든 값은 환경변수로 주입 (시크릿은 AWS Secrets Manager / SSM Parameter Store)
+# 배포 시 실행 옵션: --spring.profiles.active=prod
+# ===================================================================
+
+spring:
+  datasource:
+    # 실제 RDS 엔드포인트는 환경변수로 주입
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME}?useSSL=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      pool-name: UsedTradeHikariCP
+
+  jpa:
+    hibernate:
+      ddl-auto: validate                   # 운영은 반드시 validate (스키마 변경 금지)
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: Asia/Seoul
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
+        default_batch_fetch_size: 100
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 2000ms
+
+logging:
+  level:
+    root: INFO
+    com.portfolio.used_trade: INFO
+    org.hibernate.SQL: WARN
+
+# Actuator 는 운영에서 health 만 노출
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
