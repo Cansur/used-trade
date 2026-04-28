@@ -17,7 +17,13 @@ repositories {
 	mavenCentral()
 }
 
+// 의존성 버전을 한 곳에서 관리 — 같은 라이브러리 그룹은 같은 버전을 쓰는 게 충돌 방지에 유리
+ext {
+	jjwtVersion = '0.12.6'
+}
+
 dependencies {
+	// ----- Spring Boot Starters -----
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
@@ -25,15 +31,30 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
-	compileOnly 'org.projectlombok:lombok'
-	developmentOnly 'org.springframework.boot:spring-boot-devtools'
-	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// ----- JWT (jjwt) -----
+	// API 만 컴파일 시점에 노출 — 우리 코드는 io.jsonwebtoken.* 만 import 가능,
+	// 내부 구현(io.jsonwebtoken.impl.*) 을 실수로 가져다 쓰는 일을 막는다.
+	implementation "io.jsonwebtoken:jjwt-api:${jjwtVersion}"
+	runtimeOnly    "io.jsonwebtoken:jjwt-impl:${jjwtVersion}"      // 실제 서명/파싱 구현
+	runtimeOnly    "io.jsonwebtoken:jjwt-jackson:${jjwtVersion}"   // JSON 직렬화 (Jackson)
+
+	// ----- Lombok (컴파일 시 코드 생성, 런타임 의존 X) -----
+	compileOnly         'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
+	testCompileOnly     'org.projectlombok:lombok'
+	testAnnotationProcessor 'org.projectlombok:lombok'
+
+	// ----- 개발 편의 -----
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+	// ----- DB Driver (런타임에만 필요) -----
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// ----- Test -----
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
-	testCompileOnly 'org.projectlombok:lombok'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-	testAnnotationProcessor 'org.projectlombok:lombok'
+	testRuntimeOnly    'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {

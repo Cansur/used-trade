@@ -62,6 +62,19 @@ spring:
           min-idle: 2
           max-wait: 1000ms
 
+# ===================================================================
+# JWT 설정
+# ===================================================================
+# - secret: HS256 서명에 쓰는 비밀키. 32바이트 이상 필수 (jjwt 0.12+ 가 짧으면 거부)
+# - access-token-validity-ms : 30분 (1,800,000ms)
+# - refresh-token-validity-ms: 14일 (1,209,600,000ms)
+# 운영에서는 환경변수 / SSM Parameter Store / Secrets Manager 로 override
+jwt:
+  secret: ${JWT_SECRET:local-dev-secret-key-do-not-use-in-production-must-be-32+bytes-aaaaaaaa}
+  access-token-validity-ms: ${JWT_ACCESS_TOKEN_VALIDITY_MS:1800000}
+  refresh-token-validity-ms: ${JWT_REFRESH_TOKEN_VALIDITY_MS:1209600000}
+  issuer: ${JWT_ISSUER:used-trade}
+
 # -----------------------------
 # 개발 편의 설정
 # -----------------------------
