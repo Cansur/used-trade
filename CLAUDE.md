@@ -20,20 +20,23 @@
 - **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
 - **브랜치**: `feature/user-domain`
 - **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: JwtTokenProvider TDD — 토큰 발급/검증/블랙리스트 헬퍼 8 PASS
+- **마지막 완료**: RefreshTokenService + BlacklistService TDD — Redis 키 컨벤션/TTL 검증 9 PASS
 
 ### 다음 작업
 
-**RefreshTokenService (Redis 연동)** 부터 재개.
+**AuthService + AuthController** — 체크포인트 2 (`POST /api/auth/login`).
 
 요구 동작:
-- `save(userId, refreshToken, ttlMs)` — `refresh:<userId>` 키로 저장, TTL = refresh validity
-- `findByUserId(userId)` — 저장된 토큰 조회 (없으면 Optional.empty)
-- `delete(userId)` — 강제 로그아웃/재발급 시 폐기
-- `blacklistAccessToken(jti, ttlMs)` — `blacklist:<jti>` Redis SET, TTL = 토큰 잔여시간
-- `isBlacklisted(jti)` — 필터에서 호출
+- `login(LoginRequest)` → `TokenResponse(accessToken, refreshToken)`
+  - email 로 User 조회 (없으면 INVALID_PASSWORD — 이메일 존재여부 노출 방지)
+  - `passwordEncoder.matches` 비교
+  - User.isActive() 검증
+  - JwtTokenProvider 로 access + refresh 발급
+  - RefreshTokenService.save 로 Redis 저장
+- 컨트롤러 `POST /api/auth/login` — `ApiResponse<TokenResponse>` 응답
+- 단위 테스트: 정상 / 존재하지 않는 이메일 / 비번 불일치 / 비활성 사용자
 
-`StringRedisTemplate` 직접 주입. 단위 테스트는 `@Mock` 으로 RedisTemplate 검증, 실제 동작은 Phase 2 후반 통합 테스트 (TestContainers Redis) 에서.
+이후 Step: `JwtAuthenticationFilter` + SecurityConfig 교체 → `GET /api/users/me` 검증.
 
 ---
 
@@ -53,8 +56,8 @@
 - [x] domain layer: Role/UserStatus enum, User Entity, UserRepository, DTO 5개 (커밋 `203f9a4`)
 - [x] 회원가입: UserService TDD 3 PASS + UserController + curl 검증 (커밋 `3a207ef`)
 - [x] JwtTokenProvider TDD 8 PASS + JwtProperties 바인딩
-- [ ] **← 여기부터** RefreshTokenService (Redis 연동)
-- [ ] AuthService + AuthController → 체크포인트 2 (`POST /api/auth/login`)
+- [x] RefreshTokenService + BlacklistService TDD 9 PASS (Redis 키/TTL 컨벤션)
+- [ ] **← 여기부터** AuthService + AuthController → 체크포인트 2 (`POST /api/auth/login`)
 - [ ] JwtAuthenticationFilter + SecurityConfig 교체
 - [ ] `GET /api/users/me` 검증
 - [ ] Refresh / Logout 마무리 → 체크포인트 3
