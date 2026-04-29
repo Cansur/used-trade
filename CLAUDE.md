@@ -20,20 +20,20 @@
 - **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
 - **브랜치**: `feature/user-domain`
 - **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: 체크포인트 1 — 회원가입 (`POST /api/users`) 동작 검증 + DB 저장 확인
+- **마지막 완료**: JwtTokenProvider TDD — 토큰 발급/검증/블랙리스트 헬퍼 8 PASS
 
-### 다음 작업 (Step 3-9)
+### 다음 작업
 
-**JwtTokenProvider TDD + 구현** 부터 재개.
+**RefreshTokenService (Redis 연동)** 부터 재개.
 
-요구 메서드:
-- `createAccessToken(userId, email, role)` — 30분 만료, jti 부여
-- `createRefreshToken(userId)` — 14일 만료
-- `parseClaims(token)` — 서명 검증 + payload 추출
-- `getJti(token)` — 블랙리스트 키
-- `getRemainingMillis(token)` — 블랙리스트 TTL
+요구 동작:
+- `save(userId, refreshToken, ttlMs)` — `refresh:<userId>` 키로 저장, TTL = refresh validity
+- `findByUserId(userId)` — 저장된 토큰 조회 (없으면 Optional.empty)
+- `delete(userId)` — 강제 로그아웃/재발급 시 폐기
+- `blacklistAccessToken(jti, ttlMs)` — `blacklist:<jti>` Redis SET, TTL = 토큰 잔여시간
+- `isBlacklisted(jti)` — 필터에서 호출
 
-테스트 먼저 (RED) → 구현 (GREEN). `JwtProperties` (record + `@ConfigurationProperties`) 로 yaml 값 바인딩.
+`StringRedisTemplate` 직접 주입. 단위 테스트는 `@Mock` 으로 RedisTemplate 검증, 실제 동작은 Phase 2 후반 통합 테스트 (TestContainers Redis) 에서.
 
 ---
 
@@ -52,8 +52,8 @@
 - [x] jjwt 0.12.6 의존성 + JWT 설정 외부화 (커밋 `b8a3e1a`)
 - [x] domain layer: Role/UserStatus enum, User Entity, UserRepository, DTO 5개 (커밋 `203f9a4`)
 - [x] 회원가입: UserService TDD 3 PASS + UserController + curl 검증 (커밋 `3a207ef`)
-- [ ] **← 여기부터** JwtTokenProvider TDD
-- [ ] RefreshTokenService (Redis 연동)
+- [x] JwtTokenProvider TDD 8 PASS + JwtProperties 바인딩
+- [ ] **← 여기부터** RefreshTokenService (Redis 연동)
 - [ ] AuthService + AuthController → 체크포인트 2 (`POST /api/auth/login`)
 - [ ] JwtAuthenticationFilter + SecurityConfig 교체
 - [ ] `GET /api/users/me` 검증
