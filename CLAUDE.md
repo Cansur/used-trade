@@ -20,23 +20,26 @@
 - **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
 - **브랜치**: `feature/user-domain`
 - **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: RefreshTokenService + BlacklistService TDD — Redis 키 컨벤션/TTL 검증 9 PASS
+- **마지막 완료**: AuthService + AuthController — 로그인 4 PASS, `POST /api/auth/login` 노출
 
 ### 다음 작업
 
-**AuthService + AuthController** — 체크포인트 2 (`POST /api/auth/login`).
+**JwtAuthenticationFilter + SecurityConfig 교체** — 체크포인트 2 마무리.
 
 요구 동작:
-- `login(LoginRequest)` → `TokenResponse(accessToken, refreshToken)`
-  - email 로 User 조회 (없으면 INVALID_PASSWORD — 이메일 존재여부 노출 방지)
-  - `passwordEncoder.matches` 비교
-  - User.isActive() 검증
-  - JwtTokenProvider 로 access + refresh 발급
-  - RefreshTokenService.save 로 Redis 저장
-- 컨트롤러 `POST /api/auth/login` — `ApiResponse<TokenResponse>` 응답
-- 단위 테스트: 정상 / 존재하지 않는 이메일 / 비번 불일치 / 비활성 사용자
+- `JwtAuthenticationFilter extends OncePerRequestFilter`
+  - Authorization 헤더에서 `Bearer <token>` 추출
+  - 없으면 통과 (이후 SecurityConfig 가 권한 검사)
+  - `JwtTokenProvider.parseClaims` 로 검증 (예외 → 401)
+  - `BlacklistService.isBlacklisted(jti)` 차단
+  - `Authentication` 객체 (sub=userId, role) 만들어 SecurityContext 에 set
+- `SecurityConfig` 교체
+  - `/api/auth/**`, `POST /api/users` permitAll
+  - 그 외 `authenticated()`
+  - JwtAuthenticationFilter 를 UsernamePasswordAuthenticationFilter 앞에 등록
+- `/api/users/me` 핸들러 추가 → curl 검증으로 체크포인트 2 종료
 
-이후 Step: `JwtAuthenticationFilter` + SecurityConfig 교체 → `GET /api/users/me` 검증.
+이후 Step: Refresh / Logout → 체크포인트 3.
 
 ---
 
@@ -57,8 +60,8 @@
 - [x] 회원가입: UserService TDD 3 PASS + UserController + curl 검증 (커밋 `3a207ef`)
 - [x] JwtTokenProvider TDD 8 PASS + JwtProperties 바인딩
 - [x] RefreshTokenService + BlacklistService TDD 9 PASS (Redis 키/TTL 컨벤션)
-- [ ] **← 여기부터** AuthService + AuthController → 체크포인트 2 (`POST /api/auth/login`)
-- [ ] JwtAuthenticationFilter + SecurityConfig 교체
+- [x] AuthService + AuthController TDD 4 PASS (`POST /api/auth/login`)
+- [ ] **← 여기부터** JwtAuthenticationFilter + SecurityConfig 교체
 - [ ] `GET /api/users/me` 검증
 - [ ] Refresh / Logout 마무리 → 체크포인트 3
 - [ ] Draft → Ready → squash merge
