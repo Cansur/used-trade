@@ -3,7 +3,6 @@ package com.portfolio.used_trade.user.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
-import com.portfolio.used_trade.common.response.ApiResponse;
 import com.portfolio.used_trade.user.service.BlacklistService;
 import com.portfolio.used_trade.user.service.JwtTokenProvider;
 import io.jsonwebtoken.Claims;
@@ -13,7 +12,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -22,7 +20,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -73,7 +70,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Claims claims = jwtTokenProvider.parseClaims(token);
 
             if (blacklistService.isBlacklisted(claims.getId())) {
-                writeError(response, ErrorCode.INVALID_TOKEN);
+                JsonErrorWriter.write(response, objectMapper, ErrorCode.INVALID_TOKEN);
                 return;
             }
 
@@ -81,7 +78,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
 
         } catch (BusinessException ex) {
-            writeError(response, ex.getErrorCode());
+            JsonErrorWriter.write(response, objectMapper, ex.getErrorCode());
         }
     }
 
@@ -90,13 +87,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         var authorities = List.of(new SimpleGrantedAuthority(ROLE_PREFIX + principal.role().name()));
         var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);
-    }
-
-    private void writeError(HttpServletResponse response, ErrorCode code) throws IOException {
-        response.setStatus(code.getStatus().value());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        ApiResponse<Void> body = ApiResponse.error(code.getCode(), code.getDefaultMessage());
-        response.getWriter().write(objectMapper.writeValueAsString(body));
     }
 }

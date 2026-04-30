@@ -20,22 +20,24 @@
 - **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
 - **브랜치**: `feature/user-domain`
 - **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: JwtAuthenticationFilter + SecurityConfig + `GET /api/users/me` — 필터 4 PASS, 체크포인트 2 코드 완료 (수동 curl 검증 남음)
+- **마지막 완료**: 체크포인트 2 수동 검증 통과 + 401/403 EntryPoint/AccessDeniedHandler 패치
 
 ### 다음 작업
 
-**체크포인트 2 수동 검증** — Docker + curl 시나리오:
-1. `docker compose up -d` → mysql/redis healthy
-2. `./gradlew bootRun`
-3. `POST /api/users` 회원가입
-4. `POST /api/auth/login` → access/refresh 토큰 수령
-5. `GET /api/users/me` (Authorization: Bearer ...) → UserResponse
-6. 헤더 빼고 호출 → 401
-7. Redis 에서 `refresh:<userId>` 키 확인
-
-수동 검증 통과하면 → **Refresh / Logout 엔드포인트**:
-- `POST /api/auth/refresh` — refresh 토큰 검증 + Redis 매칭 → 새 access 발급
-- `POST /api/auth/logout` — access jti 블랙리스트 + refresh delete (= 체크포인트 3)
+**Refresh / Logout 엔드포인트** (= 체크포인트 3):
+- `POST /api/auth/refresh`
+  - body: `{ "refreshToken": "..." }`
+  - parseClaims 로 검증 → sub(userId) 추출
+  - `RefreshTokenService.findByUserId(userId)` 와 일치 확인 (불일치/없음 → INVALID_TOKEN)
+  - 새 Access 발급, Refresh 는 회전 (선택) — 일단 access 만 재발급으로 가고 ADR 에 적기
+  - `TokenResponse.accessOnly(...)` 사용
+- `POST /api/auth/logout`
+  - 인증된 요청 (`@AuthenticationPrincipal AuthUser auth` + `Bearer` 헤더)
+  - `BlacklistService.blacklist(jti, remainingMs)` + `RefreshTokenService.delete(userId)`
+  - 200 OK + 빈 ACK
+- 단위 테스트:
+  - refresh: 정상 / 토큰 위조 / Redis 불일치 / 만료
+  - logout: 멱등 동작 (jti 추출 → 블랙리스트 + delete 순서)
 
 ---
 
@@ -58,7 +60,8 @@
 - [x] RefreshTokenService + BlacklistService TDD 9 PASS (Redis 키/TTL 컨벤션)
 - [x] AuthService + AuthController TDD 4 PASS (`POST /api/auth/login`)
 - [x] AuthUser record + JwtAuthenticationFilter (4 PASS) + SecurityConfig (user/security)
-- [x] `GET /api/users/me` 추가 (수동 curl 검증 남음)
+- [x] `GET /api/users/me` + 체크포인트 2 curl 검증 통과
+- [x] EntryPoint/AccessDeniedHandler 추가 (401/403 응답 통일) + JsonErrorWriter 유틸로 중복 제거
 - [ ] **← 여기부터** Refresh / Logout 마무리 → 체크포인트 3
 - [ ] Draft → Ready → squash merge
 

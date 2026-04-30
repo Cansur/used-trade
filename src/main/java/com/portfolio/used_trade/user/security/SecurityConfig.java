@@ -1,5 +1,7 @@
 package com.portfolio.used_trade.user.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.portfolio.used_trade.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,7 +11,9 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
@@ -41,7 +45,7 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, ObjectMapper objectMapper) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
@@ -55,8 +59,28 @@ public class SecurityConfig {
                         .requestMatchers("/api/hello/**").permitAll()
                         .anyRequest().authenticated()
                 )
+                // 인증 미설정 → 401 / 권한 부족 → 403, 둘 다 우리 ApiResponse JSON 으로 통일.
+                // (httpBasic 을 끈 상태에서 기본 EntryPoint 가 403 을 던지는 동작을 401 로 교정)
+                .exceptionHandling(eh -> eh
+                        .authenticationEntryPoint(authenticationEntryPoint(objectMapper))
+                        .accessDeniedHandler(accessDeniedHandler(objectMapper))
+                )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    /**
+     * 인증 자체가 없는 요청 (Bearer 헤더 없음 등) 에 대한 401 응답.
+     */
+    private static AuthenticationEntryPoint authenticationEntryPoint(ObjectMapper objectMapper) {
+        return (request, response, ex) -> JsonErrorWriter.write(response, objectMapper, ErrorCode.UNAUTHORIZED);
+    }
+
+    /**
+     * 인증은 됐으나 권한이 부족한 요청 (예: USER 가 ADMIN 전용 엔드포인트 호출) 에 대한 403 응답.
+     */
+    private static AccessDeniedHandler accessDeniedHandler(ObjectMapper objectMapper) {
+        return (request, response, ex) -> JsonErrorWriter.write(response, objectMapper, ErrorCode.FORBIDDEN);
     }
 
     /**
