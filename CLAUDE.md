@@ -20,26 +20,22 @@
 - **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
 - **브랜치**: `feature/user-domain`
 - **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: AuthService + AuthController — 로그인 4 PASS, `POST /api/auth/login` 노출
+- **마지막 완료**: JwtAuthenticationFilter + SecurityConfig + `GET /api/users/me` — 필터 4 PASS, 체크포인트 2 코드 완료 (수동 curl 검증 남음)
 
 ### 다음 작업
 
-**JwtAuthenticationFilter + SecurityConfig 교체** — 체크포인트 2 마무리.
+**체크포인트 2 수동 검증** — Docker + curl 시나리오:
+1. `docker compose up -d` → mysql/redis healthy
+2. `./gradlew bootRun`
+3. `POST /api/users` 회원가입
+4. `POST /api/auth/login` → access/refresh 토큰 수령
+5. `GET /api/users/me` (Authorization: Bearer ...) → UserResponse
+6. 헤더 빼고 호출 → 401
+7. Redis 에서 `refresh:<userId>` 키 확인
 
-요구 동작:
-- `JwtAuthenticationFilter extends OncePerRequestFilter`
-  - Authorization 헤더에서 `Bearer <token>` 추출
-  - 없으면 통과 (이후 SecurityConfig 가 권한 검사)
-  - `JwtTokenProvider.parseClaims` 로 검증 (예외 → 401)
-  - `BlacklistService.isBlacklisted(jti)` 차단
-  - `Authentication` 객체 (sub=userId, role) 만들어 SecurityContext 에 set
-- `SecurityConfig` 교체
-  - `/api/auth/**`, `POST /api/users` permitAll
-  - 그 외 `authenticated()`
-  - JwtAuthenticationFilter 를 UsernamePasswordAuthenticationFilter 앞에 등록
-- `/api/users/me` 핸들러 추가 → curl 검증으로 체크포인트 2 종료
-
-이후 Step: Refresh / Logout → 체크포인트 3.
+수동 검증 통과하면 → **Refresh / Logout 엔드포인트**:
+- `POST /api/auth/refresh` — refresh 토큰 검증 + Redis 매칭 → 새 access 발급
+- `POST /api/auth/logout` — access jti 블랙리스트 + refresh delete (= 체크포인트 3)
 
 ---
 
@@ -61,9 +57,9 @@
 - [x] JwtTokenProvider TDD 8 PASS + JwtProperties 바인딩
 - [x] RefreshTokenService + BlacklistService TDD 9 PASS (Redis 키/TTL 컨벤션)
 - [x] AuthService + AuthController TDD 4 PASS (`POST /api/auth/login`)
-- [ ] **← 여기부터** JwtAuthenticationFilter + SecurityConfig 교체
-- [ ] `GET /api/users/me` 검증
-- [ ] Refresh / Logout 마무리 → 체크포인트 3
+- [x] AuthUser record + JwtAuthenticationFilter (4 PASS) + SecurityConfig (user/security)
+- [x] `GET /api/users/me` 추가 (수동 curl 검증 남음)
+- [ ] **← 여기부터** Refresh / Logout 마무리 → 체크포인트 3
 - [ ] Draft → Ready → squash merge
 
 #### 이후 도메인 (예정)

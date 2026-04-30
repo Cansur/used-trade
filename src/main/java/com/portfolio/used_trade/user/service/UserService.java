@@ -53,4 +53,17 @@ public class UserService {
         User saved = userRepository.save(user);
         return UserResponse.from(saved);
     }
+
+    /**
+     * id 로 사용자 조회. {@code GET /me} 같은 토큰 외 정보(닉네임, createdAt) 가
+     * 필요한 응답에서 호출.
+     *
+     * @throws BusinessException {@link ErrorCode#USER_NOT_FOUND} 토큰은 유효하지만 DB 에선 사라진 경우
+     *                                                            (탈퇴 후 토큰 잔여 등)
+     */
+    public UserResponse findById(Long id) {
+        return userRepository.findById(id)
+                .map(UserResponse::from)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
 }
