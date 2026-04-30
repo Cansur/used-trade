@@ -23,6 +23,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -128,6 +129,21 @@ class JwtAuthenticationFilterTest {
 
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("/api/auth/** 경로는 필터 자체를 건너뛴다 — refresh/logout 멱등 보장")
+    void authEndpoints_areSkipped() throws Exception {
+        request.setRequestURI("/api/auth/logout");
+        request.addHeader("Authorization", "Bearer would-be-blacklisted-token");
+
+        filter.doFilter(request, response, chain);
+
+        // 필터 진입 자체가 없어야 — parseClaims/blacklist 둘 다 호출 X
+        verify(jwtTokenProvider, never()).parseClaims(anyString());
+        verify(blacklistService, never()).isBlacklisted(anyString());
+        verify(chain).doFilter(request, response);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test

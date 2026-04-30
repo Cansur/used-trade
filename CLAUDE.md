@@ -20,24 +20,21 @@
 - **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
 - **브랜치**: `feature/user-domain`
 - **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: 체크포인트 2 수동 검증 통과 + 401/403 EntryPoint/AccessDeniedHandler 패치
+- **마지막 완료**: 체크포인트 3 — Refresh / Logout 엔드포인트 + 멱등 보장 (수동 검증 7/7 통과)
 
 ### 다음 작업
 
-**Refresh / Logout 엔드포인트** (= 체크포인트 3):
-- `POST /api/auth/refresh`
-  - body: `{ "refreshToken": "..." }`
-  - parseClaims 로 검증 → sub(userId) 추출
-  - `RefreshTokenService.findByUserId(userId)` 와 일치 확인 (불일치/없음 → INVALID_TOKEN)
-  - 새 Access 발급, Refresh 는 회전 (선택) — 일단 access 만 재발급으로 가고 ADR 에 적기
-  - `TokenResponse.accessOnly(...)` 사용
-- `POST /api/auth/logout`
-  - 인증된 요청 (`@AuthenticationPrincipal AuthUser auth` + `Bearer` 헤더)
-  - `BlacklistService.blacklist(jti, remainingMs)` + `RefreshTokenService.delete(userId)`
-  - 200 OK + 빈 ACK
-- 단위 테스트:
-  - refresh: 정상 / 토큰 위조 / Redis 불일치 / 만료
-  - logout: 멱등 동작 (jti 추출 → 블랙리스트 + delete 순서)
+**user 도메인 Draft PR #1 마무리** → main 머지.
+- [x] 체크포인트 1 (signup), 2 (login + /me), 3 (refresh + logout) 모두 통과
+- [ ] PR description 갱신: 검증 시나리오, 발견한 버그 (401/403, logout 멱등성), ADR 후보 정리
+- [ ] Draft → Ready for review → squash merge to main
+- [ ] 브랜치 삭제
+
+이후 **product 도메인** (W1 Day 5) 진입:
+- Product 엔티티 + 카테고리
+- 상품 등록/수정/삭제/조회 API
+- S3 Presigned URL (이후)
+- QueryDSL + 커서 페이징 (트레이드오프 ADR)
 
 ---
 
@@ -62,7 +59,8 @@
 - [x] AuthUser record + JwtAuthenticationFilter (4 PASS) + SecurityConfig (user/security)
 - [x] `GET /api/users/me` + 체크포인트 2 curl 검증 통과
 - [x] EntryPoint/AccessDeniedHandler 추가 (401/403 응답 통일) + JsonErrorWriter 유틸로 중복 제거
-- [ ] **← 여기부터** Refresh / Logout 마무리 → 체크포인트 3
+- [x] Refresh / Logout 엔드포인트 (AuthService 9 PASS, 필터 5 PASS, 멱등 검증 OK) → 체크포인트 3
+- [ ] **← 여기부터** Draft PR → Ready → squash merge
 - [ ] Draft → Ready → squash merge
 
 #### 이후 도메인 (예정)

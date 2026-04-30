@@ -48,10 +48,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_PREFIX = "ROLE_";
+    private static final String AUTH_PATH_PREFIX = "/api/auth/";
 
     private final JwtTokenProvider jwtTokenProvider;
     private final BlacklistService blacklistService;
     private final ObjectMapper objectMapper;
+
+    /**
+     * 인증 엔드포인트({@code /api/auth/**})는 본 필터를 건너뛴다.
+     *
+     * <p><b>왜?</b>
+     * <ul>
+     *   <li>logout: 같은 토큰으로 2번 호출 시 1번째에서 jti 가 블랙리스트에 올라가 2번째가 401 →
+     *       멱등 보장 깨짐</li>
+     *   <li>refresh: access 가 만료된 상태에서 호출되는 게 정상인데 필터가 401 로 거부하면 동작 불가</li>
+     *   <li>login: Authorization 헤더 자체를 받지 않음</li>
+     * </ul>
+     * 인증 자체를 다루는 경로라 bearer 검증을 거치지 않는 게 의미적으로도 맞다.
+     */
+    @Override
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+        return request.getRequestURI().startsWith(AUTH_PATH_PREFIX);
+    }
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
