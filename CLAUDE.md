@@ -17,24 +17,31 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W1 Day 4 / **user 도메인** 진행 중 (Phase 2)
-- **브랜치**: `feature/user-domain`
-- **Draft PR**: #1 OPEN ([링크](https://github.com/Cansur/used-trade/pull/1))
-- **마지막 완료**: 체크포인트 3 — Refresh / Logout 엔드포인트 + 멱등 보장 (수동 검증 7/7 통과)
+- **단계**: W1 Day 5 진입 / **product 도메인** 시작 예정 (Phase 2)
+- **브랜치**: `main` (다음 작업 시작 시 `feature/product-domain` 생성)
+- **마지막 완료**: PR #1 squash merge → main 통합 (`3ca087b`). user 도메인 Phase 2 종료
+- **다음 PR**: `feature/product-domain` Draft PR (예정)
 
-### 다음 작업
+### 다음 작업 — product 도메인 (W1 Day 5)
 
-**user 도메인 Draft PR #1 마무리** → main 머지.
-- [x] 체크포인트 1 (signup), 2 (login + /me), 3 (refresh + logout) 모두 통과
-- [ ] PR description 갱신: 검증 시나리오, 발견한 버그 (401/403, logout 멱등성), ADR 후보 정리
-- [ ] Draft → Ready for review → squash merge to main
-- [ ] 브랜치 삭제
+큰 그림:
+- Product 엔티티 + 카테고리 (Many-to-One)
+- 상품 등록/수정/삭제/조회 API (`/api/products`)
+- 검색 + 페이징 — **커서 페이징 vs 오프셋 페이징** ADR 후보
+- S3 Presigned URL (S3 환경 구성은 W2)
 
-이후 **product 도메인** (W1 Day 5) 진입:
-- Product 엔티티 + 카테고리
-- 상품 등록/수정/삭제/조회 API
-- S3 Presigned URL (이후)
-- QueryDSL + 커서 페이징 (트레이드오프 ADR)
+진입 순서 제안:
+1. Category 엔티티 (간단한 시드 데이터)
+2. Product 엔티티 + Repository (`@Version` 자리만 잡고 W1 Day 5에선 미사용)
+3. ProductService TDD (CRUD)
+4. ProductController + curl 검증
+5. 목록 조회 + 커서 페이징 결정
+6. 이미지 업로드는 Presigned URL DTO만 (실제 S3 통합은 다음 W에)
+
+설계 결정 미리 짚을 것:
+- **소유자 검증** — 본인 상품만 수정/삭제. AuthUser principal 활용해서 컨트롤러/서비스 어디서 검사할지
+- **상태 머신** — `AVAILABLE → TRADING → SOLD` (낙관적 락 시점에 trade 도메인과 연동)
+- **카테고리 마스터** — DB 시드 vs enum. enum이 단순하지만 운영 변경 어려움
 
 ---
 
@@ -49,22 +56,21 @@
 
 ### 🚧 Phase 2 — 도메인 구현 (진행 중)
 
-#### user 도메인 — Draft PR #1
-- [x] jjwt 0.12.6 의존성 + JWT 설정 외부화 (커밋 `b8a3e1a`)
-- [x] domain layer: Role/UserStatus enum, User Entity, UserRepository, DTO 5개 (커밋 `203f9a4`)
-- [x] 회원가입: UserService TDD 3 PASS + UserController + curl 검증 (커밋 `3a207ef`)
-- [x] JwtTokenProvider TDD 8 PASS + JwtProperties 바인딩
-- [x] RefreshTokenService + BlacklistService TDD 9 PASS (Redis 키/TTL 컨벤션)
-- [x] AuthService + AuthController TDD 4 PASS (`POST /api/auth/login`)
-- [x] AuthUser record + JwtAuthenticationFilter (4 PASS) + SecurityConfig (user/security)
-- [x] `GET /api/users/me` + 체크포인트 2 curl 검증 통과
-- [x] EntryPoint/AccessDeniedHandler 추가 (401/403 응답 통일) + JsonErrorWriter 유틸로 중복 제거
-- [x] Refresh / Logout 엔드포인트 (AuthService 9 PASS, 필터 5 PASS, 멱등 검증 OK) → 체크포인트 3
-- [ ] **← 여기부터** Draft PR → Ready → squash merge
-- [ ] Draft → Ready → squash merge
+#### ✅ user 도메인 (완료, main 머지됨, PR #1 squash → `3ca087b`)
+- 38 단위 테스트 PASS, Docker 환경 curl 7 시나리오 검증
+- 체크포인트 1 (signup) / 2 (login + /me) / 3 (refresh + logout 멱등)
+- 수동 검증으로 잡은 버그: 401/403 EntryPoint 누락, logout 멱등성 깨짐
+- API: `POST /api/users` `POST /api/auth/{login,refresh,logout}` `GET /api/users/me`
+
+#### 🚧 product 도메인 — 다음 (W1 Day 5)
+- [ ] **← 여기부터** Category 엔티티 + 시드
+- [ ] Product 엔티티 + Repository
+- [ ] ProductService TDD (CRUD + 소유자 검증)
+- [ ] ProductController + curl 검증
+- [ ] 목록 조회 + 커서 페이징 결정 (ADR 후보)
+- [ ] 이미지 업로드 DTO (S3 통합은 W2)
 
 #### 이후 도메인 (예정)
-- product (W1 Day 5)
 - trade — **ADR-2 핵심** (낙관적 락 + Saga + Outbox, 부하 테스트)
 - chat — **ADR-3 핵심** (WebSocket + Redis Pub/Sub)
 - payment (Mock)
