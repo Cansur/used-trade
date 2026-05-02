@@ -39,6 +39,13 @@ spring:
       password: ${REDIS_PASSWORD}
       timeout: 2000ms
 
+# JWT — 운영은 기본값 없음 (없으면 부팅 실패하도록 강제)
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity-ms: ${JWT_ACCESS_TOKEN_VALIDITY_MS:1800000}
+  refresh-token-validity-ms: ${JWT_REFRESH_TOKEN_VALIDITY_MS:1209600000}
+  issuer: ${JWT_ISSUER:used-trade}
+
 logging:
   level:
     root: INFO
