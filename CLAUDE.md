@@ -17,9 +17,9 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W1 Day 5 진입 / **product 도메인** 시작 예정 (Phase 2)
-- **브랜치**: `main` (다음 작업 시작 시 `feature/product-domain` 생성)
-- **마지막 완료**: PR #1 squash merge → main 통합 (`3ca087b`). user 도메인 Phase 2 종료
+- **단계**: W1 Day 5 진행 / **product 도메인** 진입 (Phase 2)
+- **브랜치**: `feature/product-domain` (작업 중)
+- **마지막 완료**: Category 엔티티 + 카테고리 마스터 시드 (CommandLineRunner, idempotent, 10건). 단위 테스트 3건 추가 → 총 42 PASS. Docker MySQL 적재 검증 완료.
 - **다음 PR**: `feature/product-domain` Draft PR (예정)
 
 ### 다음 작업 — product 도메인 (W1 Day 5)
@@ -30,18 +30,18 @@
 - 검색 + 페이징 — **커서 페이징 vs 오프셋 페이징** ADR 후보
 - S3 Presigned URL (S3 환경 구성은 W2)
 
-진입 순서 제안:
-1. Category 엔티티 (간단한 시드 데이터)
-2. Product 엔티티 + Repository (`@Version` 자리만 잡고 W1 Day 5에선 미사용)
+진입 순서:
+1. ✅ Category 엔티티 + 시드
+2. **← 여기부터** Product 엔티티 + Repository (`@Version` 자리만 잡고 W1 Day 5에선 미사용)
 3. ProductService TDD (CRUD)
 4. ProductController + curl 검증
 5. 목록 조회 + 커서 페이징 결정
 6. 이미지 업로드는 Presigned URL DTO만 (실제 S3 통합은 다음 W에)
 
-설계 결정 미리 짚을 것:
-- **소유자 검증** — 본인 상품만 수정/삭제. AuthUser principal 활용해서 컨트롤러/서비스 어디서 검사할지
-- **상태 머신** — `AVAILABLE → TRADING → SOLD` (낙관적 락 시점에 trade 도메인과 연동)
-- **카테고리 마스터** — DB 시드 vs enum. enum이 단순하지만 운영 변경 어려움
+설계 결정:
+- ✅ **카테고리 마스터** — DB 시드 채택 (CommandLineRunner + `existsByName` idempotent). 근거: 운영 변경 잦음 + Product FK 자연스러움 + DB 방언 무관.
+- 미정 — **소유자 검증**: 본인 상품만 수정/삭제. AuthUser principal 활용. 컨트롤러/서비스 어디서 검사할지 ProductService 작성 시 결정.
+- 미정 — **상태 머신**: `AVAILABLE → TRADING → SOLD` (낙관적 락 시점에 trade 도메인과 연동)
 
 ---
 
@@ -62,9 +62,9 @@
 - 수동 검증으로 잡은 버그: 401/403 EntryPoint 누락, logout 멱등성 깨짐
 - API: `POST /api/users` `POST /api/auth/{login,refresh,logout}` `GET /api/users/me`
 
-#### 🚧 product 도메인 — 다음 (W1 Day 5)
-- [ ] **← 여기부터** Category 엔티티 + 시드
-- [ ] Product 엔티티 + Repository
+#### 🚧 product 도메인 — 진행 중 (W1 Day 5)
+- [x] Category 엔티티 + 시드 (`Category`, `CategoryRepository`, `CategoryDataInitializer` + 단위 3건). MySQL 적재 확인.
+- [ ] **← 여기부터** Product 엔티티 + Repository
 - [ ] ProductService TDD (CRUD + 소유자 검증)
 - [ ] ProductController + curl 검증
 - [ ] 목록 조회 + 커서 페이징 결정 (ADR 후보)

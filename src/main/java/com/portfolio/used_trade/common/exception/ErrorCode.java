@@ -41,6 +41,7 @@ public enum ErrorCode {
     PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND", "상품을 찾을 수 없습니다."),
     PRODUCT_NOT_AVAILABLE(HttpStatus.CONFLICT, "PRODUCT_NOT_AVAILABLE", "판매 중인 상품이 아닙니다."),
     NOT_PRODUCT_OWNER(HttpStatus.FORBIDDEN, "NOT_PRODUCT_OWNER", "상품 소유자가 아닙니다."),
+    CATEGORY_NOT_FOUND(HttpStatus.NOT_FOUND, "CATEGORY_NOT_FOUND", "카테고리를 찾을 수 없습니다."),
 
     // ----- 거래 (Saga / 낙관적 락 대상) -----
     TRADE_NOT_FOUND(HttpStatus.NOT_FOUND, "TRADE_NOT_FOUND", "거래 내역을 찾을 수 없습니다."),
