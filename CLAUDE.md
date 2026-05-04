@@ -19,7 +19,7 @@
 
 - **단계**: W1 Day 5 진행 / **product 도메인** 진입 (Phase 2)
 - **브랜치**: `feature/product-domain` (작업 중)
-- **마지막 완료**: Category 엔티티 + 카테고리 마스터 시드 (CommandLineRunner, idempotent, 10건). 단위 테스트 3건 추가 → 총 42 PASS. Docker MySQL 적재 검증 완료.
+- **마지막 완료**: Product 엔티티 + ProductRepository + 상태 머신 (`AVAILABLE/TRADING/SOLD`) + `@Version` 자리. Product 단위 10건 추가 → 총 52 PASS. Docker MySQL 에 `products` 테이블 + FK(`seller_id→users`, `category_id→categories`) + 3 인덱스 검증 완료.
 - **다음 PR**: `feature/product-domain` Draft PR (예정)
 
 ### 다음 작업 — product 도메인 (W1 Day 5)
@@ -32,16 +32,18 @@
 
 진입 순서:
 1. ✅ Category 엔티티 + 시드
-2. **← 여기부터** Product 엔티티 + Repository (`@Version` 자리만 잡고 W1 Day 5에선 미사용)
-3. ProductService TDD (CRUD)
+2. ✅ Product 엔티티 + Repository (`@Version` 자리만, retry 는 trade 합류 시 활성화)
+3. **← 여기부터** ProductService TDD (CRUD + 소유자 검증 + 상태 전이 호출)
 4. ProductController + curl 검증
 5. 목록 조회 + 커서 페이징 결정
 6. 이미지 업로드는 Presigned URL DTO만 (실제 S3 통합은 다음 W에)
 
 설계 결정:
-- ✅ **카테고리 마스터** — DB 시드 채택 (CommandLineRunner + `existsByName` idempotent). 근거: 운영 변경 잦음 + Product FK 자연스러움 + DB 방언 무관.
-- 미정 — **소유자 검증**: 본인 상품만 수정/삭제. AuthUser principal 활용. 컨트롤러/서비스 어디서 검사할지 ProductService 작성 시 결정.
-- 미정 — **상태 머신**: `AVAILABLE → TRADING → SOLD` (낙관적 락 시점에 trade 도메인과 연동)
+- ✅ **카테고리 마스터** — DB 시드 채택 (CommandLineRunner + `existsByName` idempotent).
+- ✅ **상태 머신** — `AVAILABLE → TRADING → SOLD` 의 도메인 메서드 가드 (`reserve / markSold / cancelReservation`). 잘못된 전이는 `BusinessException(PRODUCT_NOT_AVAILABLE)`. 실제 호출은 trade 도메인 합류 시.
+- ✅ **`@Version`** — 필드만 박아두고 ProductService 단계는 retry 미적용. trade 도메인 합류 시 ADR-2 핵심으로 활성화.
+- ✅ **가격 타입** — `Long` (KRW 원). 다국적 결제 들어가면 `BigDecimal` 로 이전.
+- 미정 — **소유자 검증 위치**: 도메인은 `Product.isOwnedBy(userId)` 헬퍼만 노출. 검증 호출은 ProductService 진입 시 결정 (서비스 진입 직후가 유력).
 
 ---
 
@@ -64,8 +66,8 @@
 
 #### 🚧 product 도메인 — 진행 중 (W1 Day 5)
 - [x] Category 엔티티 + 시드 (`Category`, `CategoryRepository`, `CategoryDataInitializer` + 단위 3건). MySQL 적재 확인.
-- [ ] **← 여기부터** Product 엔티티 + Repository
-- [ ] ProductService TDD (CRUD + 소유자 검증)
+- [x] Product 엔티티 + ProductRepository + ProductStatus 상태 머신 + `@Version` 자리 + 단위 10건. FK 2종 + 인덱스 3종 검증.
+- [ ] **← 여기부터** ProductService TDD (CRUD + 소유자 검증)
 - [ ] ProductController + curl 검증
 - [ ] 목록 조회 + 커서 페이징 결정 (ADR 후보)
 - [ ] 이미지 업로드 DTO (S3 통합은 W2)
