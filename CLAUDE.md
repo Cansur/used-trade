@@ -19,7 +19,7 @@
 
 - **단계**: W1 Day 5 진행 / **product 도메인** 진입 (Phase 2)
 - **브랜치**: `feature/product-domain` (작업 중)
-- **마지막 완료**: ProductService (`register / findById / update / delete`) + DTO 3종 + 단위 12건. 소유자 검증·SOLD 가드·partial update 정책 박음. 총 64 PASS.
+- **마지막 완료**: ProductController (`POST/GET/PATCH/DELETE /api/products`) + SecurityConfig 패치 (GET permitAll). curl 11단계 / 8 검증 케이스 모두 그린. 회귀 64 PASS.
 - **다음 PR**: `feature/product-domain` Draft PR (예정)
 
 ### 다음 작업 — product 도메인 (W1 Day 5)
@@ -34,8 +34,8 @@
 1. ✅ Category 엔티티 + 시드
 2. ✅ Product 엔티티 + Repository (`@Version` 자리만, retry 는 trade 합류 시 활성화)
 3. ✅ ProductService TDD (register / findById / update / delete + 소유자 + SOLD 가드)
-4. **← 여기부터** ProductController + curl 검증 (`/api/products`)
-5. 목록 조회 + 커서 페이징 결정
+4. ✅ ProductController + SecurityConfig 패치 + curl 8 시나리오 검증
+5. **← 여기부터** 목록 조회 + 커서 페이징 결정 (ADR 후보)
 6. 이미지 업로드는 Presigned URL DTO만 (실제 S3 통합은 다음 W에)
 
 설계 결정:
@@ -70,8 +70,8 @@
 - [x] Category 엔티티 + 시드 (`Category`, `CategoryRepository`, `CategoryDataInitializer` + 단위 3건). MySQL 적재 확인.
 - [x] Product 엔티티 + ProductRepository + ProductStatus 상태 머신 + `@Version` 자리 + 단위 10건. FK 2종 + 인덱스 3종 검증.
 - [x] ProductService (`register/findById/update/delete`) + DTO 3종 (`Register/Update/Response`) + 단위 12건. 소유자·SOLD·존재 가드.
-- [ ] **← 여기부터** ProductController + curl 검증 (`/api/products`)
-- [ ] 목록 조회 + 커서 페이징 결정 (ADR 후보)
+- [x] ProductController (`POST/GET/PATCH/DELETE`) + SecurityConfig 패치 (GET permitAll) + curl 8 시나리오 검증 (체크포인트 1: 등록·조회 / 2: 수정·소유자 거부 / 3: 삭제·404).
+- [ ] **← 여기부터** 목록 조회 + 커서 페이징 결정 (ADR 후보)
 - [ ] 이미지 업로드 DTO (S3 통합은 W2)
 
 #### 이후 도메인 (예정)

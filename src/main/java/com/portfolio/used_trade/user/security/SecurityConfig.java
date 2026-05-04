@@ -57,6 +57,8 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         // 임시 — 헬스체크/디버그 핑용. JWT 검증과 무관한 공개 엔드포인트.
                         .requestMatchers("/api/hello/**").permitAll()
+                        // 상품 단건/목록 조회는 비로그인 노출. 등록/수정/삭제는 authenticated().
+                        .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 // 인증 미설정 → 401 / 권한 부족 → 403, 둘 다 우리 ApiResponse JSON 으로 통일.
