@@ -19,7 +19,7 @@
 
 - **단계**: W1 Day 5 진행 / **product 도메인** 진입 (Phase 2)
 - **브랜치**: `feature/product-domain` (작업 중)
-- **마지막 완료**: ProductController (`POST/GET/PATCH/DELETE /api/products`) + SecurityConfig 패치 (GET permitAll). curl 11단계 / 8 검증 케이스 모두 그린. 회귀 64 PASS.
+- **마지막 완료**: 커서 페이징 B2 — `GET /api/products` (cursor/categoryId/sellerId/size 쿼리 파라미터, default size 20), `CursorPagingBenchmarkTest` (10만 건 시드 + 100회 측정 + EXPLAIN), `docs/adr/004-cursor-pagination.md` 수치 채움. **깊은 페이지 OFFSET 14.40ms → CURSOR 0.71ms (20.1× 빠름)**. curl 5/5 그린.
 - **다음 PR**: `feature/product-domain` Draft PR (예정)
 
 ### 다음 작업 — product 도메인 (W1 Day 5)
@@ -35,8 +35,8 @@
 2. ✅ Product 엔티티 + Repository (`@Version` 자리만, retry 는 trade 합류 시 활성화)
 3. ✅ ProductService TDD (register / findById / update / delete + 소유자 + SOLD 가드)
 4. ✅ ProductController + SecurityConfig 패치 + curl 8 시나리오 검증
-5. **← 여기부터** 목록 조회 + 커서 페이징 결정 (ADR 후보)
-6. 이미지 업로드는 Presigned URL DTO만 (실제 S3 통합은 다음 W에)
+5. ✅ 목록 + 커서 페이징 (ADR-4): B1(Repository/Service/DTO) + B2(Controller/curl/벤치마크) — 깊은 페이지 20.1× 빠름 측정
+6. **← 여기부터** 이미지 업로드 Presigned URL DTO (실제 S3 통합은 W2)
 
 설계 결정:
 - ✅ **카테고리 마스터** — DB 시드 채택 (CommandLineRunner + `existsByName` idempotent).
@@ -46,6 +46,7 @@
 - ✅ **소유자 검증 위치** — 서비스 진입 직후 `loadAndCheckMutable(sellerId, productId)` 공통 가드. 컨트롤러는 `@AuthenticationPrincipal AuthUser` 의 `id()` 만 전달.
 - ✅ **SOLD 가드** — 수정/삭제 모두 `PRODUCT_NOT_AVAILABLE` 로 거부 (거래 이력 보존). 별도 ErrorCode 신설하지 않고 재사용.
 - ✅ **PATCH 의미** — `ProductUpdateRequest` 모든 필드 nullable. `null = 변경 없음`. 모든 필드 null 이면 무동작.
+- ✅ **목록 페이징** — 커서 채택 (ADR-4 후보). 근거: 깊은 페이지에서 OFFSET 의 `O(n)` → 커서 + id 인덱스 시크 `O(log n)`. 인덱스 `idx_products_status_id (status, id)` 가 직접 지원. AVAILABLE 만 default, size 1~50 클램핑, size+1 트릭으로 hasNext 정확.
 
 ---
 
@@ -71,8 +72,9 @@
 - [x] Product 엔티티 + ProductRepository + ProductStatus 상태 머신 + `@Version` 자리 + 단위 10건. FK 2종 + 인덱스 3종 검증.
 - [x] ProductService (`register/findById/update/delete`) + DTO 3종 (`Register/Update/Response`) + 단위 12건. 소유자·SOLD·존재 가드.
 - [x] ProductController (`POST/GET/PATCH/DELETE`) + SecurityConfig 패치 (GET permitAll) + curl 8 시나리오 검증 (체크포인트 1: 등록·조회 / 2: 수정·소유자 거부 / 3: 삭제·404).
-- [ ] **← 여기부터** 목록 조회 + 커서 페이징 결정 (ADR 후보)
-- [ ] 이미지 업로드 DTO (S3 통합은 W2)
+- [x] B1: 커서 페이징 — Repository(JPQL+JOIN FETCH) + DTO + Service.list + 단위 6건. 70 PASS.
+- [x] B2: `GET /api/products` Controller + curl 5/5 + 벤치마크 (10만 건, 깊은 페이지 OFFSET 14.40ms → CURSOR 0.71ms = 20.1×). ADR-4 작성.
+- [ ] **← 여기부터** 이미지 업로드 Presigned URL DTO (S3 통합은 W2)
 
 #### 이후 도메인 (예정)
 - trade — **ADR-2 핵심** (낙관적 락 + Saga + Outbox, 부하 테스트)
@@ -93,6 +95,7 @@
 | ADR-1 | Modular Monolith (not MSA) | 2주 내 구현 가능, 도메인 경계 패키지로 분리 |
 | ADR-2 | 낙관적 락 + `@Version` + Spring Retry | 중고거래 충돌 빈도 낮음, DB 락 대기 제거 |
 | ADR-3 | Redis Pub/Sub 멀티서버 WebSocket | ALB 뒤 N대 인스턴스 메시지 일관성 |
+| ADR-4 | 상품 목록 커서 페이징 | OFFSET 14.40ms vs CURSOR 0.71ms (깊은 페이지, 10만 건). [docs/adr/004](docs/adr/004-cursor-pagination.md) |
 | 인증 | 자체 JWT (vs OAuth) | Security 필터/BCrypt 직접 구현 = 학습/시연 가치 |
 | Access | 30분 stateless | DB 조회 없는 검증 |
 | Refresh | Redis 14일 | 강제 로그아웃 / 세션 통제 |

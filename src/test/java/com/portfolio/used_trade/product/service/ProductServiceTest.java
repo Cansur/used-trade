@@ -5,6 +5,7 @@ import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.product.domain.Category;
 import com.portfolio.used_trade.product.domain.Product;
 import com.portfolio.used_trade.product.domain.ProductStatus;
+import com.portfolio.used_trade.product.dto.ProductCursorPageResponse;
 import com.portfolio.used_trade.product.dto.ProductRegisterRequest;
 import com.portfolio.used_trade.product.dto.ProductResponse;
 import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
@@ -17,16 +18,20 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -69,6 +74,12 @@ class ProductServiceTest {
         if (status != ProductStatus.AVAILABLE) {
             ReflectionTestUtils.setField(p, "status", status);
         }
+        return p;
+    }
+
+    private Product makeProductWithId(long id) {
+        Product p = Product.create(seller, electronics, "title-" + id, "desc-" + id, 1000L * id);
+        ReflectionTestUtils.setField(p, "id", id);
         return p;
     }
 
@@ -229,6 +240,98 @@ class ProductServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.CATEGORY_NOT_FOUND);
+        }
+    }
+
+    // ============================================================
+    @Nested
+    @DisplayName("list() — 커서 페이징")
+    class List_ {
+
+        @Test
+        @DisplayName("빈 결과 — items 비어있고 hasNext=false, nextCursor=null")
+        void empty() {
+            given(productRepository.findAvailableByCursor(any(), any(), any(), any()))
+                    .willReturn(List.of());
+
+            ProductCursorPageResponse response = productService.list(null, null, null, 10);
+
+            assertThat(response.items()).isEmpty();
+            assertThat(response.nextCursor()).isNull();
+            assertThat(response.hasNext()).isFalse();
+        }
+
+        @Test
+        @DisplayName("부분 페이지 (rows < size+1) — hasNext=false, nextCursor=null")
+        void partialNoNext() {
+            // size=10 요청, repo 가 3건만 반환 (마지막 페이지)
+            given(productRepository.findAvailableByCursor(any(), any(), any(), any()))
+                    .willReturn(List.of(makeProductWithId(3L), makeProductWithId(2L), makeProductWithId(1L)));
+
+            ProductCursorPageResponse response = productService.list(null, null, null, 10);
+
+            assertThat(response.items()).hasSize(3);
+            assertThat(response.nextCursor()).isNull();
+            assertThat(response.hasNext()).isFalse();
+        }
+
+        @Test
+        @DisplayName("size+1 행 (hasNext=true 트리거) — items=size, nextCursor=마지막 id, 응답에서 +1째 행은 잘림")
+        void fullHasNext() {
+            int size = 3;
+            // repo 가 size+1=4건 반환 → 응답엔 정확히 3건만 노출
+            given(productRepository.findAvailableByCursor(any(), any(), any(), any()))
+                    .willReturn(List.of(
+                            makeProductWithId(10L),
+                            makeProductWithId(9L),
+                            makeProductWithId(8L),
+                            makeProductWithId(7L)   // 응답에선 잘림 (size+1째)
+                    ));
+
+            ProductCursorPageResponse response = productService.list(null, null, null, size);
+
+            assertThat(response.items()).hasSize(3);
+            assertThat(response.items().get(0).id()).isEqualTo(10L);
+            assertThat(response.items().get(2).id()).isEqualTo(8L);
+            assertThat(response.nextCursor()).isEqualTo(8L);     // 응답 페이지의 마지막 id
+            assertThat(response.hasNext()).isTrue();
+        }
+
+        @Test
+        @DisplayName("size 100 요청 → 50 으로 클램핑 (Repository 에 size+1=51 전달)")
+        void clampsLargeSize() {
+            given(productRepository.findAvailableByCursor(any(), any(), any(), any()))
+                    .willReturn(List.of());
+
+            productService.list(null, null, null, 100);
+
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(productRepository).findAvailableByCursor(any(), any(), any(), captor.capture());
+            assertThat(captor.getValue().getPageSize()).isEqualTo(51);
+        }
+
+        @Test
+        @DisplayName("size 0 / 음수 요청 → 1 로 클램핑 (Repository 에 size+1=2 전달)")
+        void clampsSmallSize() {
+            given(productRepository.findAvailableByCursor(any(), any(), any(), any()))
+                    .willReturn(List.of());
+
+            productService.list(null, null, null, 0);
+
+            ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+            verify(productRepository).findAvailableByCursor(any(), any(), any(), captor.capture());
+            assertThat(captor.getValue().getPageSize()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("cursor / categoryId / sellerId 는 변형 없이 그대로 Repository 에 전달")
+        void passesFiltersThrough() {
+            given(productRepository.findAvailableByCursor(any(), any(), any(), any()))
+                    .willReturn(List.of());
+
+            productService.list(99L, 1L, 100L, 10);
+
+            verify(productRepository).findAvailableByCursor(eq(99L), eq(1L), eq(100L), any());
         }
     }
 

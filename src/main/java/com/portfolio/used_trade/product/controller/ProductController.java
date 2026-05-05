@@ -1,6 +1,7 @@
 package com.portfolio.used_trade.product.controller;
 
 import com.portfolio.used_trade.common.response.ApiResponse;
+import com.portfolio.used_trade.product.dto.ProductCursorPageResponse;
 import com.portfolio.used_trade.product.dto.ProductRegisterRequest;
 import com.portfolio.used_trade.product.dto.ProductResponse;
 import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -71,6 +73,30 @@ public class ProductController {
     @GetMapping("/{id}")
     public ApiResponse<ProductResponse> findById(@PathVariable("id") Long id) {
         return ApiResponse.success(productService.findById(id));
+    }
+
+    /**
+     * AVAILABLE 상품 목록 (커서 페이징, 인증 불필요).
+     *
+     * <p>쿼리 파라미터:
+     * <ul>
+     *   <li>{@code cursor}     — 앞 페이지 마지막 id (생략 = 첫 페이지)</li>
+     *   <li>{@code categoryId} — 카테고리 필터 (생략 = 전체)</li>
+     *   <li>{@code sellerId}   — 판매자 필터 (생략 = 전체)</li>
+     *   <li>{@code size}       — 페이지 크기, default 20, 1~50 으로 클램핑</li>
+     * </ul>
+     *
+     * <p>예: {@code GET /api/products?categoryId=1&size=20}<br>
+     * 다음 페이지: {@code GET /api/products?categoryId=1&cursor=23&size=20}
+     */
+    @GetMapping
+    public ApiResponse<ProductCursorPageResponse> list(
+            @RequestParam(required = false) Long cursor,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long sellerId,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ApiResponse.success(productService.list(cursor, categoryId, sellerId, size));
     }
 
     /**

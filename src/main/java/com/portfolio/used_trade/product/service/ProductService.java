@@ -5,6 +5,7 @@ import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.product.domain.Category;
 import com.portfolio.used_trade.product.domain.Product;
 import com.portfolio.used_trade.product.domain.ProductStatus;
+import com.portfolio.used_trade.product.dto.ProductCursorPageResponse;
 import com.portfolio.used_trade.product.dto.ProductRegisterRequest;
 import com.portfolio.used_trade.product.dto.ProductResponse;
 import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
@@ -13,8 +14,11 @@ import com.portfolio.used_trade.product.repository.ProductRepository;
 import com.portfolio.used_trade.user.domain.User;
 import com.portfolio.used_trade.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * 상품 도메인 핵심 비즈니스 로직.
@@ -40,6 +44,11 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ProductService {
+
+    /** 한 페이지 최대 행 수 — 악의적/실수로 큰 값을 전달해도 50 으로 클램핑. */
+    static final int MAX_PAGE_SIZE = 50;
+    /** 한 페이지 최소 행 수 — 0 이나 음수가 들어와도 최소 1 보장. */
+    static final int MIN_PAGE_SIZE = 1;
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -75,6 +84,40 @@ public class ProductService {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         return ProductResponse.from(product);
+    }
+
+    /**
+     * AVAILABLE 상품의 커서 기반 페이징 조회. 인증 불필요 (홈 화면 / 카테고리 진입 등).
+     *
+     * <p><b>size+1 트릭</b> — 호출자가 요청한 size 보다 1 더 가져와 다음 페이지 존재
+     * 여부를 정확히 판정한다. 응답에 노출되는 건 정확히 size 개.
+     *
+     * <p><b>size 클램핑</b>
+     * <ul>
+     *   <li>요청 size {@code <= 0} → {@link #MIN_PAGE_SIZE} (1)</li>
+     *   <li>요청 size {@code > MAX_PAGE_SIZE} → {@link #MAX_PAGE_SIZE} (50) — 악의적 부하 방어</li>
+     * </ul>
+     *
+     * @param cursor     앞 페이지 마지막 상품 id ({@code null} = 첫 페이지)
+     * @param categoryId 카테고리 필터 ({@code null} = 전체)
+     * @param sellerId   판매자 필터 ({@code null} = 전체. 마이페이지에서 본인 id 전달)
+     * @param size       페이지 크기 (1~50 으로 클램핑)
+     */
+    public ProductCursorPageResponse list(Long cursor, Long categoryId, Long sellerId, int size) {
+        int safeSize = Math.min(Math.max(size, MIN_PAGE_SIZE), MAX_PAGE_SIZE);
+        List<Product> rows = productRepository.findAvailableByCursor(
+                cursor, categoryId, sellerId, PageRequest.of(0, safeSize + 1)
+        );
+
+        boolean hasNext = rows.size() > safeSize;
+        List<Product> page = hasNext ? rows.subList(0, safeSize) : rows;
+
+        Long nextCursor = hasNext && !page.isEmpty()
+                ? page.get(page.size() - 1).getId()
+                : null;
+
+        List<ProductResponse> items = page.stream().map(ProductResponse::from).toList();
+        return new ProductCursorPageResponse(items, nextCursor, hasNext);
     }
 
     /**
