@@ -57,6 +57,26 @@ dependencies {
 	testRuntimeOnly    'org.junit.platform:junit-platform-launcher'
 }
 
+// ===== 테스트 분리 =====
+// 일반 단위/통합 테스트는 빠르게 — `@Tag("benchmark")` 태그가 붙은 클래스/메서드는 제외.
+// 벤치마크는 명시적으로 `./gradlew benchmark` 로만 실행 (CI 부담 / flaky 회피).
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'benchmark'
+	}
+}
+
+// 벤치마크 전용 task — 수동 실행만.
+// 실행 예: ./gradlew benchmark
+//   - JdbcTemplate 으로 더미 데이터 시드 (idempotent)
+//   - 워밍업 + 반복 측정 + percentile
+//   - EXPLAIN 출력
+// 결과는 docs/adr/004-cursor-pagination.md 본문에 표로 옮겨 기록.
+tasks.register('benchmark', Test) {
+	useJUnitPlatform {
+		includeTags 'benchmark'
+	}
+	testLogging {
+		showStandardStreams = true   // System.out 출력 콘솔로 노출 (측정값 보기)
+	}
 }
