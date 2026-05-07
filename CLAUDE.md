@@ -17,23 +17,20 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W2 / **trade 도메인 RESERVED + ADR-2 정량화 완료** — 다음 도메인(chat 또는 payment) 진입 직전
-- **브랜치**: `feature/trade-domain` (main 에서 분기, product PR #2 머지 완료)
-- **마지막 완료**: ADR-2 정량화 (D-light) — `TradeServiceNaive` (`@Profile("!prod")`, JdbcTemplate 으로 `@Version` 우회) + Naive 통합 (N=20 → 중복 거래 3건 발생, Before 입증) + Load 통합 (N=50 After 측정 — wall=246ms, p95=193ms, OK=1, BusinessException=49) + `docs/adr/002-optimistic-locking.md` 작성. 총 **97 PASS**.
-- **다음 작업**: 다음 도메인 진입 결정 (선택지 아래)
+- **단계**: W2 / **chat-1 (단일 서버) 코드 그린** — chat-2 (다중 서버 + Redis Pub/Sub, ADR-3) 진입 직전
+- **브랜치**: `feature/chat-domain` (main 에서 분기. trade PR #3 머지 완료)
+- **마지막 완료**: chat-1 — `ChatRoom` (UNIQUE (product, buyer)) + `Message` + `MessageType` + `ChatService` (createOrGetRoom / listMyRooms / sendMessage / listMessages / assertParticipant) + REST `/api/chat/rooms` (POST/GET) + `/{id}/messages` (GET 커서) + WebSocket/STOMP (`WebSocketConfig` `/ws` SockJS, `JwtChannelInterceptor` CONNECT JWT + SUBSCRIBE 참여자 가드, `ChatMessageController` `@MessageMapping`) + 단위 21건 (도메인 8 + 서비스 13). 총 **118 PASS**. ErrorCode 신규 1종 (`CHAT_SELF_NOT_ALLOWED`). REST curl 9/9 그린 (401 / 정상 / 방 재사용 / SELF / 404 / buyer목록 / seller목록 / NOT_PARTICIPANT / 빈페이지).
+- **다음 작업**: chat-2 (ADR-3 시연) 또는 PR #4 만들고 머지 후 진입
 
 ### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
 
-1. ✅ Trade RESERVED 도메인 + Service.reserve() + 단위 19건
-2. ✅ curl 스모크 6/6 (A) + fix(BusinessException @Recover)
-3. ✅ 동시성 통합 N=20 (B) — success=1, failures={PRODUCT_NOT_AVAILABLE=19}, 중복 0
-4. ✅ ADR-2 정량화 (D-light) — Naive Before/Load After + `docs/adr/002-optimistic-locking.md`
-5. **← 여기부터** 다음 도메인 — 선택지:
-   - **5-a chat** (ADR-3 핵심) — WebSocket + Redis Pub/Sub. 분산 어필.
-   - **5-b payment + Saga** — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox.
-   - **5-c AWS 배포** — Dockerfile + ECR + EC2 + ALB. URL 시연 가치.
-6. S3ImageStorage 어댑터 추가 (AWS 가입 후)
-7. PR 머지 + main 정리
+1. ✅ Trade RESERVED + ADR-2 정량화 + PR #3 머지 (`8e27d39`)
+2. ✅ chat-1 단일 서버 — REST + WebSocket/STOMP + JWT CONNECT 가드 + SUBSCRIBE 참여자 가드
+3. **← 여기부터** chat-2 — 인스턴스 2개 띄워 단일 서버 한계 재현 → Redis Pub/Sub 으로 인스턴스 간 메시지 릴레이 → ADR-3 작성
+4. payment + Saga — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox
+5. AWS 배포 — Dockerfile + ECR + EC2 + ALB
+6. S3ImageStorage 어댑터 (AWS 가입 후)
+7. README 최종 정리 + 데모 영상
 
 ### trade 도메인 진행 (RESERVED 1차)
 1. ✅ TradeStatus enum (RESERVED → CONFIRMED → SETTLED / CANCELED)
@@ -114,10 +111,23 @@
 - [ ] confirm/settle/cancel 서비스 노출 (다음 PR — payment 합류 시점)
 - [ ] Saga + Outbox (payment 합류)
 
+#### 🚧 chat 도메인 — chat-1 완료 (W2)
+- [x] ChatRoom + Message + MessageType (TEXT만, SYSTEM_* 향후) + UNIQUE (product, buyer)
+- [x] ChatRoomRepository + MessageRepository (커서 페이징 size+1 트릭)
+- [x] ChatService — createOrGetRoom (중복 방 재사용) / listMyRooms (buyer/seller 합집합) / sendMessage (도메인 가드 위임) / listMessages (참여자 가드) / assertParticipant
+- [x] REST: POST /api/chat/rooms, GET /api/chat/rooms, GET /{id}/messages
+- [x] WebSocket/STOMP: /ws SockJS endpoint + /topic broker + /app SEND prefix
+- [x] JwtChannelInterceptor — CONNECT 단계 JWT 검증 + SUBSCRIBE 단계 참여자 검증
+- [x] ChatMessageController — @MessageMapping("/chat/rooms/{roomId}/messages") + SimpMessagingTemplate broadcast
+- [x] SecurityConfig 갱신 — /ws/** permitAll (STOMP CONNECT 에서 JWT 검증)
+- [x] 단위 21 (도메인 8 + 서비스 13) + REST curl 9/9. 총 118 PASS.
+- [ ] chat-2 (다음 PR) — 다중 인스턴스 띄워 SimpleBroker 한계 재현 → Redis Pub/Sub 릴레이 → ADR-3
+- [ ] STOMP 통합 테스트 (WebSocketStompClient) — chat-2 시점에 함께
+
 #### 이후 도메인 (예정)
-- chat — **ADR-3 핵심** (WebSocket + Redis Pub/Sub)
-- payment (Mock)
+- payment (Mock + Saga + Outbox)
 - S3ImageStorage 어댑터 (AWS 가입 후)
+- AWS EC2 + ALB 배포
 
 ### 📋 Phase 3 — 마무리
 - 테스트 커버리지 80% (JaCoCo)
