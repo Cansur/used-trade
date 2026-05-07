@@ -17,20 +17,21 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W2 / **chat-1 (단일 서버) 코드 그린** — chat-2 (다중 서버 + Redis Pub/Sub, ADR-3) 진입 직전
-- **브랜치**: `feature/chat-domain` (main 에서 분기. trade PR #3 머지 완료)
-- **마지막 완료**: chat-1 — `ChatRoom` (UNIQUE (product, buyer)) + `Message` + `MessageType` + `ChatService` (createOrGetRoom / listMyRooms / sendMessage / listMessages / assertParticipant) + REST `/api/chat/rooms` (POST/GET) + `/{id}/messages` (GET 커서) + WebSocket/STOMP (`WebSocketConfig` `/ws` SockJS, `JwtChannelInterceptor` CONNECT JWT + SUBSCRIBE 참여자 가드, `ChatMessageController` `@MessageMapping`) + 단위 21건 (도메인 8 + 서비스 13). 총 **118 PASS**. ErrorCode 신규 1종 (`CHAT_SELF_NOT_ALLOWED`). REST curl 9/9 그린 (401 / 정상 / 방 재사용 / SELF / 404 / buyer목록 / seller목록 / NOT_PARTICIPANT / 빈페이지).
-- **다음 작업**: chat-2 (ADR-3 시연) 또는 PR #4 만들고 머지 후 진입
+- **단계**: W2 / **chat-2 (다중 서버 + Redis Pub/Sub, ADR-3) 코드 그린** — payment 또는 AWS 배포 진입 직전
+- **브랜치**: `feature/chat-redis-pubsub` (main 에서 분기. chat-1 PR #4 머지 완료 `56355ed`)
+- **마지막 완료**: chat-2 — Redis Pub/Sub 릴레이 (`RedisChatPublisher` / `RedisChatSubscriber` / `RedisChatPubSubConfig`(`RedisMessageListenerContainer`) / `ChatBroadcastEvent` / `RedisChatChannels.CHAT_BROADCAST`) + `ChatMessageController` 가 `SimpMessagingTemplate` 직접 호출 → publisher 경로로 전환 + WebSocketConfig dual endpoint (`/ws` raw + `/ws-sockjs`) + STOMP 통합 테스트 2종 (`ChatStompSingleInstanceTest`, `ChatStompDualInstanceTest`) + `docs/adr/003-redis-pubsub-chat.md`. 총 **120 PASS**.
+- **다음 작업**: PR #5 만들고 머지 → 다음 도메인 진입 (선택지 아래)
 
 ### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
 
 1. ✅ Trade RESERVED + ADR-2 정량화 + PR #3 머지 (`8e27d39`)
-2. ✅ chat-1 단일 서버 — REST + WebSocket/STOMP + JWT CONNECT 가드 + SUBSCRIBE 참여자 가드
-3. **← 여기부터** chat-2 — 인스턴스 2개 띄워 단일 서버 한계 재현 → Redis Pub/Sub 으로 인스턴스 간 메시지 릴레이 → ADR-3 작성
-4. payment + Saga — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox
-5. AWS 배포 — Dockerfile + ECR + EC2 + ALB
-6. S3ImageStorage 어댑터 (AWS 가입 후)
-7. README 최종 정리 + 데모 영상
+2. ✅ chat-1 단일 서버 + PR #4 머지 (`56355ed`)
+3. ✅ chat-2 — 다중 인스턴스 + Redis Pub/Sub 릴레이 + ADR-3 + STOMP 통합 테스트
+4. **← 여기부터** 다음 도메인 — 선택지:
+   - **4-a payment + Saga** — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox
+   - **4-b AWS 배포** — Dockerfile + ECR + EC2 + ALB. 실제 URL 시연 가치
+5. S3ImageStorage 어댑터 (AWS 가입 후)
+6. README 최종 정리 + 데모 영상
 
 ### trade 도메인 진행 (RESERVED 1차)
 1. ✅ TradeStatus enum (RESERVED → CONFIRMED → SETTLED / CANCELED)
@@ -121,8 +122,11 @@
 - [x] ChatMessageController — @MessageMapping("/chat/rooms/{roomId}/messages") + SimpMessagingTemplate broadcast
 - [x] SecurityConfig 갱신 — /ws/** permitAll (STOMP CONNECT 에서 JWT 검증)
 - [x] 단위 21 (도메인 8 + 서비스 13) + REST curl 9/9. 총 118 PASS.
-- [ ] chat-2 (다음 PR) — 다중 인스턴스 띄워 SimpleBroker 한계 재현 → Redis Pub/Sub 릴레이 → ADR-3
-- [ ] STOMP 통합 테스트 (WebSocketStompClient) — chat-2 시점에 함께
+- [x] chat-2 — Redis Pub/Sub 릴레이 (publisher/subscriber/config) + `ChatMessageController` publisher 경로 전환
+- [x] WebSocketConfig dual endpoint (`/ws` raw + `/ws-sockjs`)
+- [x] STOMP 통합 테스트 — 단일 인스턴스 (`ChatStompSingleInstanceTest`) + 다중 인스턴스 (`ChatStompDualInstanceTest`, `SpringApplicationBuilder` 로 인스턴스 B 시동, 같은 Redis 공유)
+- [x] `docs/adr/003-redis-pubsub-chat.md` (Sticky / Pub/Sub / Kafka / Hazelcast 비교, Before/After 표, Redis 단일 장애점 한계 명시)
+- [x] 단위 21 + 통합 STOMP 2 = chat 23 + 기존 trade/product/user 97 = **총 120 PASS**
 
 #### 이후 도메인 (예정)
 - payment (Mock + Saga + Outbox)
@@ -142,7 +146,7 @@
 |---|---|---|
 | ADR-1 | Modular Monolith (not MSA) | 2주 내 구현 가능, 도메인 경계 패키지로 분리 |
 | ADR-2 | 낙관적 락 + `@Version` + Spring Retry | 중고거래 충돌 빈도 낮음, DB 락 대기 제거 |
-| ADR-3 | Redis Pub/Sub 멀티서버 WebSocket | ALB 뒤 N대 인스턴스 메시지 일관성 |
+| ADR-3 | Redis Pub/Sub 멀티서버 WebSocket | ALB 뒤 N대 인스턴스 메시지 일관성. [docs/adr/003](docs/adr/003-redis-pubsub-chat.md) — STOMP dual-instance 통합 테스트로 입증 |
 | ADR-4 | 상품 목록 커서 페이징 | OFFSET 14.40ms vs CURSOR 0.71ms (깊은 페이지, 10만 건). [docs/adr/004](docs/adr/004-cursor-pagination.md) |
 | 인증 | 자체 JWT (vs OAuth) | Security 필터/BCrypt 직접 구현 = 학습/시연 가치 |
 | Access | 30분 stateless | DB 조회 없는 검증 |
