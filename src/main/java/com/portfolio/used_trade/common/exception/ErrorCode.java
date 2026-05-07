@@ -46,6 +46,8 @@ public enum ErrorCode {
     // ----- 거래 (Saga / 낙관적 락 대상) -----
     TRADE_NOT_FOUND(HttpStatus.NOT_FOUND, "TRADE_NOT_FOUND", "거래 내역을 찾을 수 없습니다."),
     TRADE_ALREADY_RESERVED(HttpStatus.CONFLICT, "TRADE_ALREADY_RESERVED", "이미 예약된 상품입니다."),
+    TRADE_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "TRADE_SELF_NOT_ALLOWED", "본인 상품은 예약할 수 없습니다."),
+    INVALID_TRADE_TRANSITION(HttpStatus.CONFLICT, "INVALID_TRADE_TRANSITION", "현재 거래 상태에서 허용되지 않는 전이입니다."),
     CONCURRENT_MODIFICATION(HttpStatus.CONFLICT, "CONCURRENT_MODIFICATION", "동시 수정이 감지되었습니다. 잠시 후 다시 시도해주세요."),
 
     // ----- 결제 -----

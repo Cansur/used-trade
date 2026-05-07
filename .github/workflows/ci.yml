@@ -1,7 +1,8 @@
 # ===================================================================
 # CI 파이프라인 — push / PR 시 빌드 + 테스트 수행
-# 현재(Phase 1)는 유닛 테스트만 실행. 통합 테스트(Testcontainers)는
-# trade/chat 도메인 완성 이후 추가될 예정.
+# Phase 2 (trade 도메인 합류) 부터는 @SpringBootTest 통합 테스트가 실제 MySQL/Redis 를
+# 필요로 한다 → GH Actions services 로 ephemeral 컨테이너 띄워 연결.
+# 로컬 docker-compose 와 동일한 포트/계정/스키마를 그대로 사용해 yaml 변경 없이 동작.
 # ===================================================================
 
 name: CI
@@ -22,6 +23,33 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
 
+    # 통합 테스트가 의존하는 인프라 — 로컬 docker-compose 와 동일한 포트/계정/DB
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+          MYSQL_DATABASE: usedtrade
+          MYSQL_USER: usedtrade_user
+          MYSQL_PASSWORD: usedtrade1234!
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -prootpw"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,8 +64,6 @@ jobs:
       - name: Grant execute permission to gradlew
         run: chmod +x ./gradlew
 
-      # Phase 1: 테스트 인프라가 아직 없으므로 컴파일만 수행
-      # Phase 2: build (유닛 + 통합 테스트) 로 교체
       - name: Compile
         run: ./gradlew compileJava compileTestJava --no-daemon
 

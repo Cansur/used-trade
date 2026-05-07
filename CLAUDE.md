@@ -9,7 +9,7 @@
 
 중고거래 백엔드 포트폴리오. **Spring Boot 3.5 · Java 21 · MySQL 8 · Redis 7 · Docker · AWS(예정)**.
 
-- 2주 압축 플랜 (시작 2026-04-25 → 종료 2026-05-08)
+- 3주 플랜 (시작 2026-04-25 → 종료 **2026-05-15**, 1주 연장)
 - 단순 CRUD 가 아니라 **3 ADR + Before/After 성능 수치**가 핵심 가치
 - GitHub: https://github.com/Cansur/used-trade
 
@@ -17,31 +17,42 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W1 Day 5 마감 / **W2 진입 직전** (trade 도메인 ADR-2)
-- **브랜치**: `feature/product-domain` (Draft PR 진행 중) → 곧 머지 후 `feature/trade-domain` 신설 예정
-- **마지막 완료**: 이미지 Presigned URL Mock — `PresignedUrlRequest/Response` DTO + `ImageStoragePort` (Hexagonal Port) + `MockImageStorage` (`@Profile("!prod")`) + `ProductImageService` (소유자/SOLD 가드 + UUID objectKey) + `POST /api/products/{id}/images/presign` + 단위 5건. curl 6/6 그린. 총 75 PASS. W2 에서 `S3ImageStorage` 어댑터만 추가하면 즉시 진짜 S3 통합.
-- **다음 PR**: 현재 Draft PR 머지 후 `feature/trade-domain` 신설
+- **단계**: W2 / **trade 도메인 RESERVED + ADR-2 정량화 완료** — 다음 도메인(chat 또는 payment) 진입 직전
+- **브랜치**: `feature/trade-domain` (main 에서 분기, product PR #2 머지 완료)
+- **마지막 완료**: ADR-2 정량화 (D-light) — `TradeServiceNaive` (`@Profile("!prod")`, JdbcTemplate 으로 `@Version` 우회) + Naive 통합 (N=20 → 중복 거래 3건 발생, Before 입증) + Load 통합 (N=50 After 측정 — wall=246ms, p95=193ms, OK=1, BusinessException=49) + `docs/adr/002-optimistic-locking.md` 작성. 총 **97 PASS**.
+- **다음 작업**: 다음 도메인 진입 결정 (선택지 아래)
 
-### 다음 작업 — W2 trade 도메인 (ADR-2 핵심)
+### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
 
-product 도메인 완전 마감. W2 진입 시 결정 포인트:
+1. ✅ Trade RESERVED 도메인 + Service.reserve() + 단위 19건
+2. ✅ curl 스모크 6/6 (A) + fix(BusinessException @Recover)
+3. ✅ 동시성 통합 N=20 (B) — success=1, failures={PRODUCT_NOT_AVAILABLE=19}, 중복 0
+4. ✅ ADR-2 정량화 (D-light) — Naive Before/Load After + `docs/adr/002-optimistic-locking.md`
+5. **← 여기부터** 다음 도메인 — 선택지:
+   - **5-a chat** (ADR-3 핵심) — WebSocket + Redis Pub/Sub. 분산 어필.
+   - **5-b payment + Saga** — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox.
+   - **5-c AWS 배포** — Dockerfile + ECR + EC2 + ALB. URL 시연 가치.
+6. S3ImageStorage 어댑터 추가 (AWS 가입 후)
+7. PR 머지 + main 정리
 
-큰 그림 (W2):
-- **trade**: 동시 예약 충돌 방어 — 낙관적 락(`@Version`) + Spring Retry, Saga + Outbox, k6/JMeter 부하 시뮬레이션 (ADR-2 핵심 어필)
-- **chat**: WebSocket + Redis Pub/Sub (멀티 인스턴스 메시지 일관성, ADR-3 핵심)
-- **payment**: Mock 결제 (Saga 트리거)
-- **S3 통합**: `S3ImageStorage` 어댑터 추가 (인터페이스는 이미 박혀 있음 — AWS 가입 후 갈아끼우기만)
-- **AWS 배포** (Phase 3): EC2 + ALB
+### trade 도메인 진행 (RESERVED 1차)
+1. ✅ TradeStatus enum (RESERVED → CONFIRMED → SETTLED / CANCELED)
+2. ✅ Trade 엔티티 + 정적 팩토리 + 도메인 메서드 (confirm/settle/cancel) + `@Version`
+3. ✅ TradeRepository
+4. ✅ Spring Retry 의존성 + RetryConfig
+5. ✅ TradeService.reserve() (`@Retryable` + `saveAndFlush` + `@Recover`)
+6. ✅ TradeController (`POST /api/trades`, 201) + DTO 2종 (`TradeReserveRequest`, `TradeResponse`)
+7. ⏭ curl 스모크 (A) → 동시성 통합 (B) → k6 (D) → confirm/settle/cancel 노출 (다음 PR)
 
-진입 순서 제안 (W2 확정 시 갱신):
-1. **← 여기부터** Trade 엔티티 + 상태 머신 (RESERVED → CONFIRMED → SETTLED / CANCELED)
-2. TradeService — Product.reserve() 호출 + 낙관적 락 충돌 시 Spring Retry
-3. 동시성 시뮬레이션 — k6 또는 JMeter 로 N개 동시 예약 → 1건만 성공 검증
-4. (선택) Saga + Outbox 패턴 (payment 합류 시점)
-5. ChatRoom + Message + WebSocket + Redis Pub/Sub
-6. Payment Mock 어댑터
-7. S3ImageStorage 추가 (AWS 가입 후)
-8. AWS EC2 + ALB 배포
+설계 결정 (trade RESERVED 1차):
+- ✅ **상태 머신** — `RESERVED → CONFIRMED → SETTLED / CANCELED`. 도메인 메서드 가드. 잘못된 전이는 `INVALID_TRADE_TRANSITION`. 이번 PR 의 서비스 노출은 `reserve` 만 — confirm/settle/cancel 은 도메인 메서드만 박아두고 다음 PR (payment 합류) 에서 서비스로 노출.
+- ✅ **`Trade.reserve()` 정적 팩토리** — self-trade 차단 → `Product.reserve()` 호출 → 가격 스냅샷 → RESERVED 생성을 한 번에 묶음. Service 는 존재 검증과 영속화만.
+- ✅ **가격 스냅샷 (`pricePaid`)** — Product.price 가 사후 변경되어도 거래 금액은 거래 시점 가격으로 고정. 일반적인 e-commerce 관행.
+- ✅ **`cancel()` 범위** — RESERVED 단계만 허용. CONFIRMED 취소는 환불 로직과 함께 다음 PR. (사용자 합의)
+- ✅ **`@Retryable` + `saveAndFlush`** — 보통의 `save()` 는 트랜잭션 커밋 시점에 flush → OptimisticLockingFailureException 이 메서드 밖에서 발생 → `@Retryable` 이 못 잡음. `saveAndFlush` 로 메서드 안에서 즉시 flush 강제 → 충돌이 메서드 안에서 터짐 → 재시도 가능. **이게 ADR-2 시연의 핵심.**
+- ✅ **재시도 정책** — max=3, backoff 50ms × multiplier 2. 모두 실패 시 `@Recover` 가 `TRADE_ALREADY_RESERVED` 로 변환 — 사용자에겐 "다른 사람이 선점" 의미.
+- ✅ **`@EnableRetry` 위치** — `trade/config/RetryConfig` (도메인 종속). 다른 도메인이 retry 를 요구하면 common/config 로 승격.
+- ✅ **`buyerId` 출처** — 본문이 아닌 `@AuthenticationPrincipal AuthUser`. 본문 받으면 위장 예약 가능.
 
 ### product 도메인 진행 (전체 ✅)
 1. ✅ Category 엔티티 + 시드
@@ -90,10 +101,18 @@ product 도메인 완전 마감. W2 진입 시 결정 포인트:
 - [x] B2: `GET /api/products` Controller + curl 5/5 + 벤치마크 (10만 건, 깊은 페이지 20.1× 빠름). ADR-4 작성.
 - [x] 이미지 Presigned URL Mock — Port/Adapter, ProductImageService, `POST /api/products/{id}/images/presign` + 단위 5건 + curl 6/6. 총 75 PASS.
 
-#### 🚧 trade 도메인 — 다음 (W2 진입)
-- [ ] **← 여기부터** Trade 엔티티 + 상태 머신 + 낙관적 락 충돌 시뮬레이션 (ADR-2 핵심)
+#### ✅ trade 도메인 RESERVED 1차 + ADR-2 정량화 (W2)
+- [x] Trade 엔티티 + 상태 머신 (RESERVED → CONFIRMED → SETTLED / CANCELED) + `@Version`
+- [x] TradeService.reserve() — `@Retryable` + `saveAndFlush` + `@Recover(DataAccessException)` (ADR-2 핵심)
+- [x] TradeController `POST /api/trades` (201)
+- [x] curl 스모크 6/6 (A) + fix(BusinessException @Recover) — 401/INVALID/404/SELF/RESERVED/CONFLICT
+- [x] 동시성 통합 N=20 (B) — success=1, failures={PRODUCT_NOT_AVAILABLE=19}, 중복 0
+- [x] Naive 통합 N=20 (Before, ADR-2 시연) — 중복 거래 3건 발생 입증
+- [x] Load 통합 N=50 (After 정량) — wall=246ms, p95=193ms, OK=1, BusinessException=49
+- [x] `docs/adr/002-optimistic-locking.md`
+- [x] 단위 19 + 통합 3 = 22 trade 테스트. 총 97 PASS.
+- [ ] confirm/settle/cancel 서비스 노출 (다음 PR — payment 합류 시점)
 - [ ] Saga + Outbox (payment 합류)
-- [ ] k6/JMeter 부하 시나리오 + Before/After 측정
 
 #### 이후 도메인 (예정)
 - chat — **ADR-3 핵심** (WebSocket + Redis Pub/Sub)
