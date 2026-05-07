@@ -59,6 +59,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/hello/**").permitAll()
                         // 상품 단건/목록 조회는 비로그인 노출. 등록/수정/삭제는 authenticated().
                         .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                        // STOMP/SockJS 핸드셰이크 — HTTP 단계 인증은 풀고, STOMP CONNECT 프레임에서
+                        // JwtChannelInterceptor 가 JWT 를 검증한다 (SockJS info/iframe 등 부속 요청 포함).
+                        .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 // 인증 미설정 → 401 / 권한 부족 → 403, 둘 다 우리 ApiResponse JSON 으로 통일.

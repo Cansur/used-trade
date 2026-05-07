@@ -55,7 +55,8 @@ public enum ErrorCode {
 
     // ----- 채팅 -----
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "CHAT_ROOM_NOT_FOUND", "채팅방을 찾을 수 없습니다."),
-    NOT_CHAT_PARTICIPANT(HttpStatus.FORBIDDEN, "NOT_CHAT_PARTICIPANT", "채팅방 참여자가 아닙니다.");
+    NOT_CHAT_PARTICIPANT(HttpStatus.FORBIDDEN, "NOT_CHAT_PARTICIPANT", "채팅방 참여자가 아닙니다."),
+    CHAT_SELF_NOT_ALLOWED(HttpStatus.BAD_REQUEST, "CHAT_SELF_NOT_ALLOWED", "본인 상품에 채팅을 시작할 수 없습니다.");
 
     private final HttpStatus status;
     private final String code;
