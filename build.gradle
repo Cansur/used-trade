@@ -32,6 +32,11 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
+	// ----- Spring Retry (ADR-2: 낙관적 락 충돌 시 재시도) -----
+	// @Retryable / @Recover 를 동작시키려면 spring-aspects 가 함께 필요 — AOP 프록시 기반.
+	implementation 'org.springframework.retry:spring-retry'
+	implementation 'org.springframework:spring-aspects'
+
 	// ----- JWT (jjwt) -----
 	// API 만 컴파일 시점에 노출 — 우리 코드는 io.jsonwebtoken.* 만 import 가능,
 	// 내부 구현(io.jsonwebtoken.impl.*) 을 실수로 가져다 쓰는 일을 막는다.
