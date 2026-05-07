@@ -102,4 +102,26 @@ public class TradeService {
         log.warn("[trade.reserve] 낙관적 락 재시도 모두 실패 — buyerId={}, productId={}", buyerId, productId, ex);
         throw new BusinessException(ErrorCode.TRADE_ALREADY_RESERVED);
     }
+
+    /**
+     * BusinessException 용 @Recover.
+     *
+     * <p><b>왜 필요한가?</b><br>
+     * Spring Retry 는 {@code @Retryable} 메서드에서 발생한 예외가 {@code retryFor} 에
+     * 매칭되지 않으면 즉시 종료하고, 그 다음 단계로 {@code @Recover} 를 탐색한다.
+     * 매칭되는 {@code @Recover} 를 못 찾으면 원본 예외를 그대로 던지는 게 아니라
+     * {@code ExhaustedRetryException("Cannot locate recovery method")} 로 감싼다.
+     * 즉 {@link BusinessException} 이 그대로 클라이언트로 도달하지 못하고
+     * 500 INTERNAL_SERVER_ERROR 가 된다.
+     *
+     * <p>그래서 BusinessException 시그니처의 {@code @Recover} 를 두고 그대로 rethrow 하면,
+     * Spring Retry 가 wrap 하지 않고 {@link com.portfolio.used_trade.common.exception.GlobalExceptionHandler}
+     * 까지 BusinessException 그대로 도달한다 (PRODUCT_NOT_FOUND, TRADE_SELF_NOT_ALLOWED,
+     * PRODUCT_NOT_AVAILABLE 등이 의도한 응답 코드로 변환됨).
+     */
+    @Recover
+    public TradeResponse rethrowBusinessException(BusinessException ex,
+                                                  Long buyerId, Long productId) {
+        throw ex;
+    }
 }
