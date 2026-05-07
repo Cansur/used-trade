@@ -11,6 +11,8 @@ import com.portfolio.used_trade.user.domain.User;
 import com.portfolio.used_trade.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
@@ -37,9 +39,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>재시도 정책</b>
  * <ul>
+ *   <li>대상: {@link OptimisticLockingFailureException} (JPA @Version 충돌) +
+ *       {@link CannotAcquireLockException} (MySQL InnoDB 데드락 검출 → 트랜잭션 롤백).
+ *       동시 reserve 통합 테스트에서 둘 다 실측됨 — 동일 product row 갱신 경합으로
+ *       일부는 옵티미스틱 충돌로, 일부는 InnoDB 데드락으로 떨어진다.</li>
  *   <li>최대 3회 (초기 시도 1회 + 재시도 2회)</li>
  *   <li>지수 백오프 — 50ms → 100ms (multiplier 2)</li>
- *   <li>모두 실패하면 {@link #recoverReserve} 가 {@code TRADE_ALREADY_RESERVED} 로 변환</li>
+ *   <li>모두 실패하면 {@link #recoverFromConcurrencyFailure} 가 {@code TRADE_ALREADY_RESERVED} 로 변환</li>
  * </ul>
  *
  * <p><b>주의 — Self invocation</b><br>
@@ -66,7 +72,10 @@ public class TradeService {
      * @throws BusinessException {@link ErrorCode#TRADE_ALREADY_RESERVED}    재시도 모두 실패 (recover)
      */
     @Retryable(
-            retryFor = OptimisticLockingFailureException.class,
+            retryFor = {
+                    OptimisticLockingFailureException.class,
+                    CannotAcquireLockException.class
+            },
             maxAttempts = 3,
             backoff = @Backoff(delay = 50, multiplier = 2)
     )
@@ -90,16 +99,19 @@ public class TradeService {
     }
 
     /**
-     * 재시도 모두 실패 시 호출되는 복구 핸들러.
+     * 재시도 모두 실패 시 호출되는 복구 핸들러 — 동시성 충돌 (낙관적 락 + 데드락 모두) 통합 처리.
      * 사용자에게는 "이미 예약된 상품" 으로 응답 — 동시 요청 중 다른 구매자가 선점했다는 의미.
      *
-     * <p>{@code @Recover} 의 메서드 시그니처는 첫 인자가 catch 타입(예외) 이고,
-     * 그 뒤에 원본 메서드의 인자들이 차례로 와야 한다.
+     * <p>시그니처를 {@link DataAccessException} 으로 둔 이유: {@link OptimisticLockingFailureException},
+     * {@link CannotAcquireLockException} 모두 {@link DataAccessException} 의 하위 타입.
+     * Spring Retry 의 {@code @Recover} 매칭 규칙에 따라 가장 가까운 슈퍼 타입으로
+     * 한 메서드에서 통합 처리할 수 있다.
      */
     @Recover
-    public TradeResponse recoverReserve(OptimisticLockingFailureException ex,
-                                        Long buyerId, Long productId) {
-        log.warn("[trade.reserve] 낙관적 락 재시도 모두 실패 — buyerId={}, productId={}", buyerId, productId, ex);
+    public TradeResponse recoverFromConcurrencyFailure(DataAccessException ex,
+                                                       Long buyerId, Long productId) {
+        log.warn("[trade.reserve] 동시성 충돌 재시도 모두 실패 — buyerId={}, productId={}, type={}",
+                buyerId, productId, ex.getClass().getSimpleName(), ex);
         throw new BusinessException(ErrorCode.TRADE_ALREADY_RESERVED);
     }
 
