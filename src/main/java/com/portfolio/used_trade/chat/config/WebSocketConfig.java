@@ -37,8 +37,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // raw WebSocket — 통합 테스트(WebSocketStompClient + StandardWebSocketClient) 와
+        // 모던 브라우저용. SockJS handshake 의 부속 핸들러 (info / iframe / xhr 폴백) 가
+        // 끼지 않아 클라이언트 코드가 단순하다.
         registry.addEndpoint("/ws")
-                // 데모/시연 단계라 모든 origin 허용. 운영 배포 시 도메인 화이트리스트로 좁힌다.
+                .setAllowedOriginPatterns("*");
+
+        // SockJS fallback — WebSocket 미지원 환경 (구형 브라우저 / 일부 프록시) 대비.
+        // 데모/시연 단계라 모든 origin 허용. 운영 배포 시 도메인 화이트리스트로 좁힌다.
+        registry.addEndpoint("/ws-sockjs")
                 .setAllowedOriginPatterns("*")
                 .withSockJS();
     }
