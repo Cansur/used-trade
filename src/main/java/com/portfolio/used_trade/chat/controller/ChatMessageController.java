@@ -2,6 +2,7 @@ package com.portfolio.used_trade.chat.controller;
 
 import com.portfolio.used_trade.chat.dto.MessageResponse;
 import com.portfolio.used_trade.chat.dto.MessageSendRequest;
+import com.portfolio.used_trade.chat.pubsub.RedisChatPublisher;
 import com.portfolio.used_trade.chat.service.ChatService;
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
@@ -12,7 +13,6 @@ import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 
@@ -39,13 +39,19 @@ import java.security.Principal;
 public class ChatMessageController {
 
     private final ChatService chatService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final RedisChatPublisher chatPublisher;
 
     /**
      * 메시지 발화 — STOMP SEND.
      *
      * <p>{@link Principal} 은 STOMP 세션의 user — JwtChannelInterceptor 가 CONNECT 시점에
      * 세팅한 {@link Authentication} 이다. 본문 검증/참여자 검증은 ChatService 에 위임.
+     *
+     * <p><b>왜 SimpMessagingTemplate 직접 호출이 아니라 Redis Publisher 인가?</b><br>
+     * 단일 인스턴스에선 SimpMessagingTemplate 으로 자기 인스턴스 broker 에 broadcast 만 하면
+     * 충분하지만, 다중 인스턴스 환경에선 다른 인스턴스에 붙은 같은 방 사용자가 메시지를 못
+     * 받는다 (SimpleBroker 가 in-process 한정). Redis 채널로 publish 하면 모든 인스턴스의
+     * subscriber 가 받아 자기 broker 로 broadcast — ADR-3 의 핵심.
      */
     @MessageMapping("/chat/rooms/{roomId}/messages")
     public void sendMessage(
@@ -55,7 +61,7 @@ public class ChatMessageController {
     ) {
         AuthUser user = extractAuthUser(principal);
         MessageResponse response = chatService.sendMessage(user.id(), roomId, request.content());
-        messagingTemplate.convertAndSend("/topic/chat/rooms/" + roomId, response);
+        chatPublisher.publish(roomId, response);
         log.debug("[ws.send] roomId={} senderId={} messageId={}", roomId, user.id(), response.id());
     }
 
