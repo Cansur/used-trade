@@ -1,0 +1,72 @@
+# ===================================================================
+# Docker Compose 환경 (앱 + mysql + redis 가 같은 compose 네트워크 안)
+# - 호스트 이름은 compose 서비스 이름 (mysql, redis) — 컨테이너 DNS
+# - SSL 없음 (로컬 docker)
+# - DDL 은 update (개발/시연용)
+# AWS 운영은 application-prod.yaml 사용 — 이 파일과 분리
+# ===================================================================
+
+spring:
+  datasource:
+    # compose 서비스명 'mysql' 의 컨테이너 포트 3306. host 환경변수로 override 가능 (운영 자동화 시 활용).
+    url: jdbc:mysql://${DB_HOST:mysql}:${DB_PORT:3306}/${DB_NAME:usedtrade}?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    username: ${DB_USER:usedtrade_user}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 10000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: UsedTradeHikariCP
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: Asia/Seoul
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        default_batch_fetch_size: 100
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      timeout: 2000ms
+      connect-timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 1000ms
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity-ms: ${JWT_ACCESS_TOKEN_VALIDITY_MS:1800000}
+  refresh-token-validity-ms: ${JWT_REFRESH_TOKEN_VALIDITY_MS:1209600000}
+  issuer: ${JWT_ISSUER:used-trade}
+
+logging:
+  level:
+    root: INFO
+    com.portfolio.used_trade: INFO
+    org.hibernate.SQL: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
