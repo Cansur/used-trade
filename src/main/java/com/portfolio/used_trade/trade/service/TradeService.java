@@ -136,4 +136,45 @@ public class TradeService {
                                                   Long buyerId, Long productId) {
         throw ex;
     }
+
+    // ---------- Saga 단계용 노출 메서드 (TradeSagaService 가 호출) ----------
+
+    /**
+     * 거래 확정 — Saga T2 단계. RESERVED → CONFIRMED.
+     *
+     * <p>도메인 가드 ({@link Trade#confirm()}) 가 RESERVED 외 상태에서 호출 시
+     * {@link ErrorCode#INVALID_TRADE_TRANSITION}.
+     *
+     * @throws BusinessException {@link ErrorCode#TRADE_NOT_FOUND}
+     * @throws BusinessException {@link ErrorCode#NOT_PRODUCT_OWNER} buyer 불일치
+     * @throws BusinessException {@link ErrorCode#INVALID_TRADE_TRANSITION}
+     */
+    @Transactional
+    public TradeResponse confirm(Long buyerId, Long tradeId) {
+        Trade trade = loadOwnedByBuyer(tradeId, buyerId);
+        trade.confirm();
+        return TradeResponse.from(trade);
+    }
+
+    /**
+     * 거래 취소 — Saga 보상 단계. RESERVED → CANCELED + Product 복원.
+     *
+     * <p>도메인 메서드가 product.cancelReservation() 호출.
+     */
+    @Transactional
+    public TradeResponse cancel(Long buyerId, Long tradeId) {
+        Trade trade = loadOwnedByBuyer(tradeId, buyerId);
+        trade.cancel();
+        return TradeResponse.from(trade);
+    }
+
+    private Trade loadOwnedByBuyer(Long tradeId, Long buyerId) {
+        Trade trade = tradeRepository.findById(tradeId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.TRADE_NOT_FOUND));
+        if (!trade.isBuyer(buyerId)) {
+            // 거래 참여자 (buyer) 만 confirm/cancel 가능 — seller 측 액션은 별도 endpoint (다음 PR)
+            throw new BusinessException(ErrorCode.NOT_PRODUCT_OWNER);
+        }
+        return trade;
+    }
 }

@@ -1,14 +1,17 @@
 package com.portfolio.used_trade.trade.controller;
 
 import com.portfolio.used_trade.common.response.ApiResponse;
+import com.portfolio.used_trade.trade.dto.TradeConfirmResponse;
 import com.portfolio.used_trade.trade.dto.TradeReserveRequest;
 import com.portfolio.used_trade.trade.dto.TradeResponse;
+import com.portfolio.used_trade.trade.service.TradeSagaService;
 import com.portfolio.used_trade.trade.service.TradeService;
 import com.portfolio.used_trade.user.security.AuthUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TradeController {
 
     private final TradeService tradeService;
+    private final TradeSagaService tradeSagaService;
 
     /**
      * 거래 예약. 동시 요청 시 낙관적 락 + Spring Retry 가 1명만 성공시킨다 (ADR-2).
@@ -54,5 +58,24 @@ public class TradeController {
             @Valid @RequestBody TradeReserveRequest request
     ) {
         return ApiResponse.success(tradeService.reserve(auth.id(), request.productId()));
+    }
+
+    /**
+     * 거래 확정 (결제 진행) — Saga.
+     *
+     * <p>흐름:
+     * <ol>
+     *   <li>buyer 본인 검증 + RESERVED 상태 검증</li>
+     *   <li>Mock PG 결제 시도</li>
+     *   <li>성공 → trade.confirm() (CONFIRMED)</li>
+     *   <li>실패 → trade.cancel() 보상 (Product 복원) + 402 PAYMENT_FAILED</li>
+     * </ol>
+     */
+    @PostMapping("/{tradeId}/confirm")
+    public ApiResponse<TradeConfirmResponse> confirm(
+            @AuthenticationPrincipal AuthUser auth,
+            @PathVariable Long tradeId
+    ) {
+        return ApiResponse.success(tradeSagaService.confirm(auth.id(), tradeId));
     }
 }
