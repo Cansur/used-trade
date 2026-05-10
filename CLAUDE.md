@@ -17,21 +17,25 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W2 / **chat-2 (다중 서버 + Redis Pub/Sub, ADR-3) 코드 그린** — payment 또는 AWS 배포 진입 직전
-- **브랜치**: `feature/chat-redis-pubsub` (main 에서 분기. chat-1 PR #4 머지 완료 `56355ed`)
-- **마지막 완료**: chat-2 — Redis Pub/Sub 릴레이 (`RedisChatPublisher` / `RedisChatSubscriber` / `RedisChatPubSubConfig`(`RedisMessageListenerContainer`) / `ChatBroadcastEvent` / `RedisChatChannels.CHAT_BROADCAST`) + `ChatMessageController` 가 `SimpMessagingTemplate` 직접 호출 → publisher 경로로 전환 + WebSocketConfig dual endpoint (`/ws` raw + `/ws-sockjs`) + STOMP 통합 테스트 2종 (`ChatStompSingleInstanceTest`, `ChatStompDualInstanceTest`) + `docs/adr/003-redis-pubsub-chat.md`. 총 **120 PASS**.
-- **다음 작업**: PR #5 만들고 머지 → 다음 도메인 진입 (선택지 아래)
+- **단계**: W3 / **AWS 실배포 완료** (Stage 1 + Stage 2). ADR-3 의 cross-instance 인프라까지 셋업.
+- **브랜치**: `feature/aws-stage1-docker` (main 에서 분기. chat-2 PR #5 머지 완료 `95aeb49`)
+- **마지막 완료**:
+  - **Stage 1** — Dockerfile (멀티스테이지, Liberica JRE 21 alpine, 비-root, HEALTHCHECK), docker-compose 에 app 서비스 추가 (`profiles: ["app"]` 분리), `application-docker.yaml` profile (compose 네트워크 호스트 = mysql/redis), `.dockerignore`. 로컬 검증: `/actuator/health` UP / 회원가입 / 로그인 / 상품 목록 모두 200.
+  - **Stage 2 (us-east-1)** — ECR (이미지 push 완료, ~180MB) + AWS Budget ($10/월 50/80/100% 이메일 알람) + 4 Security Groups (alb/ec2/rds/redis, source-group 참조) + RDS MySQL (`db.t3.micro`, 프리티어) + ElastiCache Redis (`cache.t3.micro`, ~$0.017/h) + EC2 IAM Role + Instance Profile (ECR ReadOnly + SSM core) + ALB + Target Group (`/actuator/health` polling) + Listener (HTTP 80) + EC2 2대 (us-east-1a/b 분리, user-data 로 docker pull/run 자동) + 두 인스턴스 모두 healthy. ALB DNS sanity 5/5 그린.
+  - **시연 URL**: `http://usedtrade-alb-1692406007.us-east-1.elb.amazonaws.com` (데모 시 cleanup 후 변경 가능)
+  - **문서**: `docs/deploy/aws-setup.md` (CLI 명령 누적), `docs/deploy/cleanup.sh` (stop/delete 모드 분리)
+- **다음 작업**: PR 만들기 + 데모 끝나면 cleanup.sh 실행 → payment 또는 README 정리
 
 ### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
 
 1. ✅ Trade RESERVED + ADR-2 정량화 + PR #3 머지 (`8e27d39`)
 2. ✅ chat-1 단일 서버 + PR #4 머지 (`56355ed`)
-3. ✅ chat-2 — 다중 인스턴스 + Redis Pub/Sub 릴레이 + ADR-3 + STOMP 통합 테스트
-4. **← 여기부터** 다음 도메인 — 선택지:
-   - **4-a payment + Saga** — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox
-   - **4-b AWS 배포** — Dockerfile + ECR + EC2 + ALB. 실제 URL 시연 가치
-5. S3ImageStorage 어댑터 (AWS 가입 후)
-6. README 최종 정리 + 데모 영상
+3. ✅ chat-2 — 다중 인스턴스 + Redis Pub/Sub + ADR-3 + PR #5 머지 (`95aeb49`)
+4. ✅ AWS 배포 (Stage 1 Dockerization + Stage 2 인프라 + 데모 URL)
+5. **← 여기부터** PR + cleanup → 다음 도메인:
+   - **5-a payment + Saga** — confirm/settle/cancel 서비스 노출 + Mock PG + Outbox
+   - **5-b README 최종 정리** — 시연 자료 + 데모 영상 + ADR 링크 정리
+6. S3ImageStorage 어댑터 (AWS 사용 시)
 
 ### trade 도메인 진행 (RESERVED 1차)
 1. ✅ TradeStatus enum (RESERVED → CONFIRMED → SETTLED / CANCELED)
