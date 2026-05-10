@@ -17,14 +17,37 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W3 / **AWS 실배포 완료** (Stage 1 + Stage 2). ADR-3 의 cross-instance 인프라까지 셋업.
-- **브랜치**: `feature/aws-stage1-docker` (main 에서 분기. chat-2 PR #5 머지 완료 `95aeb49`)
+- **단계**: W3 / **payment + Saga Orchestration 완료** — 다음 README 정리 + 데모 영상.
+- **브랜치**: `feature/payment-saga` (main 에서 분기. AWS PR #6 머지 완료 `f657f7a`)
 - **마지막 완료**:
-  - **Stage 1** — Dockerfile (멀티스테이지, Liberica JRE 21 alpine, 비-root, HEALTHCHECK), docker-compose 에 app 서비스 추가 (`profiles: ["app"]` 분리), `application-docker.yaml` profile (compose 네트워크 호스트 = mysql/redis), `.dockerignore`. 로컬 검증: `/actuator/health` UP / 회원가입 / 로그인 / 상품 목록 모두 200.
-  - **Stage 2 (us-east-1)** — ECR (이미지 push 완료, ~180MB) + AWS Budget ($10/월 50/80/100% 이메일 알람) + 4 Security Groups (alb/ec2/rds/redis, source-group 참조) + RDS MySQL (`db.t3.micro`, 프리티어) + ElastiCache Redis (`cache.t3.micro`, ~$0.017/h) + EC2 IAM Role + Instance Profile (ECR ReadOnly + SSM core) + ALB + Target Group (`/actuator/health` polling) + Listener (HTTP 80) + EC2 2대 (us-east-1a/b 분리, user-data 로 docker pull/run 자동) + 두 인스턴스 모두 healthy. ALB DNS sanity 5/5 그린.
-  - **시연 URL**: `http://usedtrade-alb-1692406007.us-east-1.elb.amazonaws.com` (데모 시 cleanup 후 변경 가능)
-  - **문서**: `docs/deploy/aws-setup.md` (CLI 명령 누적), `docs/deploy/cleanup.sh` (stop/delete 모드 분리)
-- **다음 작업**: PR 만들기 + 데모 끝나면 cleanup.sh 실행 → payment 또는 README 정리
+  - **payment 도메인** — `Payment` 엔티티 (UNIQUE trade_id, status PENDING/PAID/FAILED/REFUNDED) + `PaymentRepository` + `PaymentGatewayPort` (Hexagonal) + `MockPaymentGateway` (`@Profile("!prod")`, 항상 성공) + `PaymentService.charge()` (실패 시 throw 안 함, 결과 반환 — Saga 가 분기). ErrorCode 신규 3종.
+  - **TradeService 확장** — `confirm()` / `cancel()` 메서드 노출 (도메인 메서드 호출 + buyer 가드).
+  - **TradeSagaService.confirm()** — Saga Orchestration. T0 validate → T1 payment.charge → 성공 시 T2 trade.confirm / 실패 시 T1' trade.cancel 보상. 각 단계가 자기 트랜잭션. 보상 자체 실패도 PAYMENT_FAILED 로 통일 throw.
+  - **TradeController** `POST /api/trades/{id}/confirm` 추가.
+  - **단위 18건** (PaymentTest 8 + PaymentServiceTest 3 + TradeSagaServiceTest 5) + **통합 2건** (`TradeSagaCompensationIT` — 보상 시 Product AVAILABLE 복원 + Payment FAILED row 영속, ControllablePaymentGateway 로 강제 실패 주입). 총 **138 PASS**.
+  - **curl 5/5 그린** — 401 / 403 NOT_PRODUCT_OWNER / 404 / 200 (CONFIRMED + PAID + gatewayTxId) / 409 (재confirm 차단).
+- **다음 작업**: PR 만들기 → 머지 → 5-b README 최종 정리 + 데모 영상 (AWS 다시 띄워서 캡처)
+
+### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
+
+1. ✅ Trade RESERVED + ADR-2 정량화 + PR #3 (`8e27d39`)
+2. ✅ chat-1 + PR #4 (`56355ed`)
+3. ✅ chat-2 + ADR-3 + PR #5 (`95aeb49`)
+4. ✅ AWS Stage 1+2 (Dockerization + 인프라) + PR #6 (`f657f7a`)
+5. ✅ payment + Mock PG + Saga Orchestration (1+2 단계)
+6. **← 여기부터** PR + 머지 → 5-b README 최종 정리 + 시연 (AWS 재배포 + 데모 영상)
+7. (선택) Outbox 패턴 — 일정 여유 있으면
+
+### 핵심 어필 카드 (면접용)
+
+| 키워드 | 어디 | 입증 |
+|---|---|---|
+| 모듈러 모놀리스 (ADR-1) | 패키지 분리 | user/product/trade/chat/payment 도메인 분리 |
+| 낙관적 락 + Spring Retry (ADR-2) | trade.reserve | N=20 동시 → 1건만 RESERVED, 중복 0 (Naive 비교 3건 → 0) |
+| Redis Pub/Sub 멀티서버 (ADR-3) | chat | dual-instance STOMP 통합 테스트 통과 |
+| 커서 페이징 (ADR-4) | product list | OFFSET 14ms vs CURSOR 0.7ms (10만건) |
+| **Saga Orchestration** | trade.confirm | PG 실패 시 trade.cancel 보상 + Product 복원 통합 테스트 |
+| AWS 매니지드 인프라 | EC2/RDS/ElastiCache/ALB | 실 배포 (시연 URL 가능) |
 
 ### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
 
