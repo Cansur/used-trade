@@ -17,26 +17,54 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터 읽기
 
-- **단계**: W3 / **payment + Saga Orchestration 완료** — 다음 README 정리 + 데모 영상.
-- **브랜치**: `feature/payment-saga` (main 에서 분기. AWS PR #6 머지 완료 `f657f7a`)
-- **마지막 완료**:
-  - **payment 도메인** — `Payment` 엔티티 (UNIQUE trade_id, status PENDING/PAID/FAILED/REFUNDED) + `PaymentRepository` + `PaymentGatewayPort` (Hexagonal) + `MockPaymentGateway` (`@Profile("!prod")`, 항상 성공) + `PaymentService.charge()` (실패 시 throw 안 함, 결과 반환 — Saga 가 분기). ErrorCode 신규 3종.
-  - **TradeService 확장** — `confirm()` / `cancel()` 메서드 노출 (도메인 메서드 호출 + buyer 가드).
-  - **TradeSagaService.confirm()** — Saga Orchestration. T0 validate → T1 payment.charge → 성공 시 T2 trade.confirm / 실패 시 T1' trade.cancel 보상. 각 단계가 자기 트랜잭션. 보상 자체 실패도 PAYMENT_FAILED 로 통일 throw.
-  - **TradeController** `POST /api/trades/{id}/confirm` 추가.
-  - **단위 18건** (PaymentTest 8 + PaymentServiceTest 3 + TradeSagaServiceTest 5) + **통합 2건** (`TradeSagaCompensationIT` — 보상 시 Product AVAILABLE 복원 + Payment FAILED row 영속, ControllablePaymentGateway 로 강제 실패 주입). 총 **138 PASS**.
-  - **curl 5/5 그린** — 401 / 403 NOT_PRODUCT_OWNER / 404 / 200 (CONFIRMED + PAID + gatewayTxId) / 409 (재confirm 차단).
-- **다음 작업**: PR 만들기 → 머지 → 5-b README 최종 정리 + 데모 영상 (AWS 다시 띄워서 캡처)
+- **단계**: W3 / **모든 도메인 + AWS 배포 + Saga 완료** — 5-b 진입 (README 정리 + AWS 재배포 + 스크린샷 + chat GIF). 영상 X 결정.
+- **브랜치**: `feature/readme-demo` (main 에서 분기. payment PR #7 머지 완료 `641441c`)
+- **다음 작업** — **5-b A 옵션**:
+  - **B1 README** (Claude) — 프로젝트 소개 + 아키텍처 다이어그램 + 기술 스택 표 + ADR 4종 링크 + Before/After 성능 표 + 한계/다음 단계 + 로컬 실행 가이드 (~1-1.5h)
+  - **B2 AWS 재배포** (Claude) — `docs/deploy/aws-setup.md` 의 Step 7+8 재실행 (ALB / TG / Listener 재생성 + ElastiCache 재생성 + EC2/RDS start). `/tmp/usedtrade-secrets.env` 의 시크릿 (DB_PASSWORD / REDIS_PASSWORD / JWT_SECRET) 그대로 재사용 가능. ~10~15분.
+  - **B3-1 스크린샷 5장** (사용자) — Claude 가 시나리오 + 캡처 화면 제시
+  - **B3-2 chat GIF 1개** (사용자) — chat broadcast 두 브라우저 탭. Claude 가 시나리오 + 도구 (ScreenToGif/LICEcap) 가이드 제시
+  - 영상 (mp4) 은 만들지 않음 — GIF + 스크린샷 + ADR + 코드로 충분히 어필
 
-### 진입 순서 제안 (전체 일정 — 5/15 마감 기준)
+### 진입 순서 (전체 — 5/15 마감 기준)
 
 1. ✅ Trade RESERVED + ADR-2 정량화 + PR #3 (`8e27d39`)
 2. ✅ chat-1 + PR #4 (`56355ed`)
 3. ✅ chat-2 + ADR-3 + PR #5 (`95aeb49`)
-4. ✅ AWS Stage 1+2 (Dockerization + 인프라) + PR #6 (`f657f7a`)
-5. ✅ payment + Mock PG + Saga Orchestration (1+2 단계)
-6. **← 여기부터** PR + 머지 → 5-b README 최종 정리 + 시연 (AWS 재배포 + 데모 영상)
+4. ✅ AWS Stage 1+2 + PR #6 (`f657f7a`)
+5. ✅ payment + Mock PG + Saga Orchestration + PR #7 (`641441c`)
+6. **← 여기부터** 5-b A — README + AWS 재배포 + 스크린샷 + chat GIF
 7. (선택) Outbox 패턴 — 일정 여유 있으면
+
+### 5-b 합의된 결정
+
+- **영상 안 만듦** — 사고 깊이 (ADR + 통합 테스트) 가 이미 충분. 영상 대신 스크린샷 + GIF 로 가성비
+- **시연 URL** — README 에 박되 면접 직전 재배포 안내 (24h 가동 ~$1)
+- **GIF 핵심** — chat 의 cross-instance broadcast (ADR-3 가장 시각적)
+- **스크린샷 후보** (Claude 가 시나리오 작성):
+  1. 회원가입/로그인 응답
+  2. 상품 등록 + 목록 (커서 페이징)
+  3. 거래 예약 → confirm 응답 (CONFIRMED + PAID + gatewayTxId)
+  4. 채팅 (두 사용자 메시지)
+  5. AWS 콘솔 (ALB + EC2 2대 + RDS + Redis)
+
+### 환경 / 시크릿
+
+- AWS IAM: `usedtrade-admin` (us-east-1)
+- ECR: 이미지 유지 (180MB, 무료)
+- IAM Role / Instance Profile / Security Groups: 유지
+- 비밀 (`/tmp/usedtrade-secrets.env`): `DB_PASSWORD`, `REDIS_PASSWORD`, `JWT_SECRET`. Bash 세션 시작 시 `source /tmp/usedtrade-secrets.env`
+- Git Bash 환경: `export PATH="/c/Program Files/Amazon/AWSCLIV2:$PATH"` + `export MSYS_NO_PATHCONV=1`
+
+### 새 세션 시작 명령 예시
+
+```
+"5-b A 진행. B1 README 부터 시작."
+```
+또는
+```
+"5-b B2 (AWS 재배포) 부터. README 는 다음에."
+```
 
 ### 핵심 어필 카드 (면접용)
 
