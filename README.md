@@ -24,7 +24,7 @@
 | ADR-2 | 낙관적 락 + Spring Retry (vs 비관적 / Redisson) | N=20 동시 reserve → 보호 없을 때 중복 거래 3건, 보호 있을 때 정확히 1건. N=50 까지 무결성 유지 (p95 193ms) | [docs/adr/002](docs/adr/002-optimistic-locking.md) |
 | ADR-3 | Redis Pub/Sub 멀티 인스턴스 채팅 (vs Sticky / Kafka) | 두 JVM 인스턴스에 흩어진 STOMP 구독자가 같은 메시지 수신 — `ChatStompDualInstanceTest` 통합 테스트로 입증 | [docs/adr/003](docs/adr/003-redis-pubsub-chat.md) |
 | ADR-4 | 상품 목록 커서 페이징 (vs OFFSET) | 10만 건 깊은 페이지에서 OFFSET 14.40ms → CURSOR 0.71ms, **20.1배** (EXPLAIN 첨부) | [docs/adr/004](docs/adr/004-cursor-pagination.md) |
-| Saga | trade.confirm — payment + trade 보상 | PG 실패 시 `trade.cancel` 보상 트랜잭션 + Product 상태 복원. 통합 테스트 `TradeSagaCompensationIT` 로 회귀 가드 | [TradeSagaService](src/main/java/com/portfolio/used_trade/trade/service/TradeSagaService.java) |
+| Saga | trade.confirm — payment + trade 보상 (부분 Saga) | PG 결제 실패 → `trade.cancel` 보상 + Product 복원 **자동화**. T2 / 크래시 / 보상 자체 실패 케이스는 운영자 수동 — Outbox 합류 후 자동화 (ADR-5) | [TradeSagaService](src/main/java/com/portfolio/used_trade/trade/service/TradeSagaService.java) · [§한계](#saga-의-현재-범위--의도된-한계) |
 | AWS | 매니지드 인프라 실 배포 | EC2 2대 + ALB + RDS + ElastiCache. 인프라 명령 재현 가능하게 문서화 | [docs/deploy/aws-setup.md](docs/deploy/aws-setup.md) |
 
 > 시연 URL 은 비용 절감을 위해 평소엔 정지 상태입니다 (~$1/일 가동). 면접 직전 재배포 — 본 README §[AWS 재배포](#aws-재배포-시연-시) 참고.
@@ -178,9 +178,31 @@ Spring `SimpleBroker` 는 in-process. 같은 채팅방의 buyer / seller 가 다
 핵심 결정:
 - **Saga 메서드에 `@Transactional` 을 안 둔다.** 묶으면 한 트랜잭션이라 Saga 의미 무너짐. 각 단계가 commit 후 다음 진입.
 - **결제 결과는 PAID/FAILED 모두 영속.** PG 응답 손실 시 재시도 가능, 멱등성 키 (`gatewayTxId`) 로 중복 차단.
-- **현재 한계:** T2 (`trade.confirm`) 자체 실패 시 환불 보상은 미구현 — 운영자 수동. Outbox 합류 후 자동화 예정.
 
 회귀 가드: `TradeSagaServiceTest` (단위) + `TradeSagaCompensationIT` (통합 — PG FAILED → Product 상태 원복 검증).
+
+### Saga 의 현재 범위 — 의도된 한계
+
+본 구현은 **"부분 Saga"** — 가장 흔한 실패 (PG 결제 실패) 만 자동 보상하고, 드문 케이스는 운영자 알림으로 위임. 트레이드오프를 명시적으로 자각한 선택.
+
+| 시나리오 | 발생 빈도 | 현재 처리 | 자동화 조건 (다음 단계) |
+|---|---|---|---|
+| ✅ **T1 결제 실패** (PG FAILED → 거래 취소 보상) | 흔함 (~1-3% 운영 환경) | **자동 보상** — `trade.cancel` + Product 복원. `TradeSagaCompensationIT` 가 회귀 가드 | — |
+| ❌ T2 거래 확정 실패 (PG PAID 후 `trade.confirm` 단계에서 DB 오류 등) | 매우 드묾 | log warning + 운영자 수동 환불 | Outbox 패턴 — 환불 이벤트를 `outbox_event` 테이블에 쓰고 스케줄러가 `payment.refund` 자동 실행 |
+| ❌ T1 commit 후 서버 크래시 (T2 진입 전) | 드묾 (배포 / OOM) | orphan (결제 PAID, 거래 RESERVED) | Outbox + 재시작 시 pending Saga 이어받기 |
+| ❌ T1' 보상 자체 실패 (DB 일시 장애) | 드묾 | log error + 운영자 수동 | Outbox + 지수 백오프 재시도 |
+
+**왜 지금 Outbox 안 했나**:
+- 부분 Saga + Mock PG 1차 통합 테스트로 **Saga 의 핵심 가치 (각 단계 독립 트랜잭션 + 보상 트랜잭션 + 멱등성 키)** 는 이미 입증
+- Outbox 합류는 도메인 1개 (`outbox_event` 엔티티) + 스케줄러 + 멱등성 키 처리 + 통합 테스트 추가 = ~1.5-2일 작업
+- 3주 단독 일정 안에서 ADR 4종 + 멀티 인스턴스 채팅 + AWS 실배포 우선 → Outbox 는 **ADR-5 후보 + 다음 단계** 로 분리
+
+**한계가 "충분히 좋은" 트레이드오프인 근거**:
+- T2 / 크래시 / 보상 실패는 합쳐도 운영 환경에서 0.x% 미만 빈도
+- 운영자 수동 환불도 합리적 fallback (PG 환불은 영업일 1~3일 소요라 자동 vs 수동 차이 크지 않음)
+- 자동화 vs 인프라 복잡도의 의도적 균형
+
+자세한 후속 작업은 [docs/adr/](docs/adr/) — **ADR-5 (Outbox)** 추가 예정.
 
 **API 응답 — POST `/api/trades` (예약) 직후 → POST `/api/trades/{id}/confirm` (Saga):**
 
@@ -365,7 +387,7 @@ com.portfolio.used_trade/
 
 | 항목 | 현 상태 | 다음 단계 |
 |---|---|---|
-| Outbox 패턴 | 미구현. Saga T2 실패 시 환불 보상 수동 | `outbox_event` 테이블 + 스케줄러 + 멱등성 키 — 자동 재시도 |
+| Outbox 패턴 (ADR-5 후보) | T1 결제 실패 시 보상은 자동, **T2 / 크래시 / 보상 자체 실패** 는 수동 (자세히: [Saga 의 현재 범위](#saga-의-현재-범위--의도된-한계)) | `outbox_event` 테이블 + 스케줄러 + 멱등성 키 — at-least-once 이벤트 + 자동 재시도 |
 | 모놀리스 → 채팅 분리 | 모든 도메인 한 JVM | WebSocket 연결 수 증가 시 chat 만 별도 인스턴스 |
 | 인프라 IaC | 수동 AWS CLI | Terraform 모듈화 (다음 단계) |
 | 관측성 | Actuator + 로그만 | Prometheus + Grafana + OpenTelemetry 분산 트레이싱 |
