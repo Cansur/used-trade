@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>used-trade chat demo</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, system-ui, "Segoe UI", sans-serif; }
+    body { margin: 0; padding: 16px; background: #0f172a; color: #e2e8f0; }
+    h1 { margin: 0 0 12px; font-size: 18px; color: #38bdf8; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px; }
+    .badge.connected { background: #22c55e; color: #052e16; }
+    .badge.disconnected { background: #ef4444; color: #450a0a; }
+    .card { background: #1e293b; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid #334155; }
+    .card h2 { margin: 0 0 8px; font-size: 13px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+    label { display: block; font-size: 11px; color: #64748b; margin-top: 6px; }
+    input, button { font: inherit; padding: 6px 10px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; }
+    input { width: 100%; }
+    button { cursor: pointer; background: #38bdf8; color: #0f172a; border-color: #38bdf8; font-weight: 600; margin-top: 6px; }
+    button:hover { background: #0ea5e9; }
+    button:disabled { background: #334155; color: #64748b; border-color: #334155; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; align-items: flex-end; }
+    .row > * { flex: 1; }
+    .row button { flex: 0 0 auto; }
+    #log { background: #020617; border-radius: 4px; padding: 10px; max-height: 320px; overflow-y: auto; font-family: "Consolas", "JetBrains Mono", monospace; font-size: 12px; line-height: 1.5; }
+    .msg { padding: 4px 0; border-bottom: 1px solid #1e293b; }
+    .msg.in { color: #22c55e; }
+    .msg.out { color: #fbbf24; }
+    .msg.sys { color: #94a3b8; font-style: italic; }
+    .msg.err { color: #ef4444; }
+    .msg .ts { color: #64748b; margin-right: 6px; }
+    .who { display: inline-block; background: #334155; color: #cbd5e1; font-size: 10px; padding: 1px 6px; border-radius: 999px; margin-right: 6px; }
+  </style>
+</head>
+<body>
+  <h1>used-trade chat demo <span id="state" class="badge disconnected">disconnected</span></h1>
+
+  <div class="card">
+    <h2>1. 서버 & JWT</h2>
+    <label>ALB host (포트 빼고. 예: <code><your-alb-dns>.us-east-1.elb.amazonaws.com</code>)</label>
+    <input id="host" placeholder="alb-host-here">
+    <label>JWT Access Token (login 결과의 <code>data.accessToken</code>)</label>
+    <input id="jwt" placeholder="eyJhbGciOi...">
+    <label>내 이름 (이 탭이 누구인지 — buyer or seller)</label>
+    <input id="me" placeholder="buyer / seller">
+    <div class="row">
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn" disabled>Disconnect</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. Subscribe</h2>
+    <label>Room ID (chat room 생성 후 응답의 <code>data.id</code>)</label>
+    <input id="roomId" placeholder="1">
+    <button id="subBtn" disabled>Subscribe /topic/chat/rooms/{id}</button>
+  </div>
+
+  <div class="card">
+    <h2>3. Send message</h2>
+    <div class="row">
+      <input id="msgText" placeholder="메시지 입력 후 Enter 또는 Send">
+      <button id="sendBtn" disabled>Send</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Messages</h2>
+    <div id="log"></div>
+  </div>
+
+  <!-- 라이브러리: 순수 WebSocket + stompjs (SockJS XHR 안 씀 → CORS 회피) -->
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const log = $("log");
+    const stateBadge = $("state");
+
+    let client = null;
+    let sub = null;
+    let myName = "?";
+
+    function append(cls, who, text) {
+      const div = document.createElement("div");
+      div.className = "msg " + cls;
+      const ts = new Date().toLocaleTimeString();
+      div.innerHTML = `<span class="ts">${ts}</span>` +
+                      (who ? `<span class="who">${who}</span>` : "") +
+                      text;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    function setState(connected) {
+      stateBadge.textContent = connected ? "connected" : "disconnected";
+      stateBadge.className = "badge " + (connected ? "connected" : "disconnected");
+      $("connectBtn").disabled = connected;
+      $("disconnectBtn").disabled = !connected;
+      $("subBtn").disabled = !connected;
+      $("sendBtn").disabled = !connected || !sub;
+    }
+
+    $("connectBtn").addEventListener("click", () => {
+      const host = $("host").value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const jwt = $("jwt").value.trim();
+      myName = $("me").value.trim() || "anon";
+      if (!host || !jwt) {
+        append("err", "", "host 와 jwt 둘 다 채워주세요.");
+        return;
+      }
+      const wsUrl = `ws://${host}/ws`;
+      append("sys", "", `WS CONNECT → ${wsUrl}`);
+
+      client = new StompJs.Client({
+        brokerURL: wsUrl,
+        connectHeaders: { Authorization: "Bearer " + jwt },
+        debug: () => {},   // 너무 시끄러우면 콘솔 끈다
+        reconnectDelay: 0,
+      });
+
+      client.onConnect = () => {
+        append("sys", "", "STOMP CONNECTED ✅");
+        setState(true);
+      };
+      client.onStompError = (frame) => {
+        append("err", "", "STOMP ERROR: " + (frame.headers["message"] || "") + " " + (frame.body || ""));
+        setState(false);
+      };
+      client.onWebSocketClose = (ev) => {
+        append("err", "", `WS closed (code=${ev.code}) ${ev.reason || ""}`);
+        setState(false);
+        sub = null;
+      };
+      client.activate();
+    });
+
+    $("disconnectBtn").addEventListener("click", () => {
+      if (sub) { try { sub.unsubscribe(); } catch (e) {} sub = null; }
+      if (client) client.deactivate();
+      setState(false);
+    });
+
+    $("subBtn").addEventListener("click", () => {
+      const roomId = $("roomId").value.trim();
+      if (!roomId || !client) return;
+      const dest = `/topic/chat/rooms/${roomId}`;
+      sub = client.subscribe(dest, (frame) => {
+        try {
+          const m = JSON.parse(frame.body);
+          const sender = m.senderNickname || m.senderName || "?";
+          // 자기 자신이 보낸 메시지는 send() 시점에 OUT 으로 이미 표시됨 — 에코 무시
+          if (sender === myName) return;
+          append("in", sender, m.content || frame.body);
+        } catch (e) {
+          append("in", "", frame.body);
+        }
+      });
+      append("sys", "", "SUBSCRIBED " + dest);
+      $("sendBtn").disabled = false;
+    });
+
+    function send() {
+      const roomId = $("roomId").value.trim();
+      const text = $("msgText").value.trim();
+      if (!roomId || !text || !client || !client.connected) return;
+      const dest = `/app/chat/rooms/${roomId}/messages`;
+      client.publish({ destination: dest, body: JSON.stringify({ content: text }) });
+      append("out", myName, text);
+      $("msgText").value = "";
+    }
+    $("sendBtn").addEventListener("click", send);
+    $("msgText").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
+  </script>
+</body>
+</html>
