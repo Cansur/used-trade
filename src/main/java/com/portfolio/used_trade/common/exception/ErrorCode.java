@@ -52,6 +52,9 @@ public enum ErrorCode {
 
     // ----- 결제 -----
     PAYMENT_FAILED(HttpStatus.PAYMENT_REQUIRED, "PAYMENT_FAILED", "결제에 실패했습니다."),
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "결제 내역을 찾을 수 없습니다."),
+    PAYMENT_ALREADY_PROCESSED(HttpStatus.CONFLICT, "PAYMENT_ALREADY_PROCESSED", "이미 처리된 결제입니다."),
+    PAYMENT_REFUND_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "PAYMENT_REFUND_FAILED", "환불에 실패했습니다."),
 
     // ----- 채팅 -----
     CHAT_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, "CHAT_ROOM_NOT_FOUND", "채팅방을 찾을 수 없습니다."),
