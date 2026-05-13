@@ -23,10 +23,10 @@ export PATH="/c/Program Files/Amazon/AWSCLIV2:$PATH"   # Git Bash 의 PATH 수�
 export MSYS_NO_PATHCONV=1                              # /actuator/health 같은 path 자동 변환 비활성화
 
 export AWS_REGION=us-east-1
-export AWS_ACCOUNT_ID=970852255272
+export AWS_ACCOUNT_ID=<YOUR-AWS-ACCOUNT-ID>      # `aws sts get-caller-identity --query Account --output text` 로 확인
 export PROJECT=usedtrade
 export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT}"
-export VPC_ID=vpc-057a970b0a699578e
+export VPC_ID=<YOUR-VPC-ID>                       # `aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text`
 
 source /tmp/usedtrade-secrets.env   # DB_PASSWORD / REDIS_PASSWORD / JWT_SECRET / 각 ARN
 ```
