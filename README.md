@@ -132,7 +132,18 @@ com.portfolio.used_trade/
 
 ## 문서
 
+### Architecture Decision Records — 왜 그렇게 선택했나
+- [ADR-1 — 모듈러 모놀리스 (vs MSA)](docs/adr/001-modular-monolith.md)
 - [ADR-2 — 낙관적 락 + Spring Retry](docs/adr/002-optimistic-locking.md)
 - [ADR-3 — Redis Pub/Sub 멀티 인스턴스 채팅](docs/adr/003-redis-pubsub-chat.md)
 - [ADR-4 — 커서 페이징](docs/adr/004-cursor-pagination.md)
-- [AWS 배포 가이드](docs/deploy/aws-setup.md)
+- [ADR-5 — Saga Orchestration (부분 구현)](docs/adr/005-saga-orchestration.md)
+- [ADR-6 — AWS 배포 스택 선택](docs/adr/006-aws-stack-choice.md)
+
+### Guides — 어떻게 작동하나
+- [프로젝트 구조](docs/guides/project-structure.md) — 패키지 경계, 의존 규칙
+- [테스트 전략](docs/guides/testing-strategy.md) — 138 테스트 분류, 도구, 의사결정
+- [Docker](docs/guides/docker.md) — compose / Dockerfile 결정, ECR 워크플로우
+
+### 배포
+- [AWS 배포 절차](docs/deploy/aws-setup.md) — 수동 CLI 명령 누적
