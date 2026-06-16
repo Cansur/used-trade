@@ -1,113 +1,103 @@
-# ADR-4 — 상품 목록 페이징: 커서 vs 오프셋
+# ADR-4 - 커서페이징
+
+
+### 상태
 
 - **Status**: Accepted (2026-05-05)
-- **Context**: Phase 2 / W1 Day 5 — 상품 목록(`GET /api/products`) 구현
-- **Related**: ADR-2 (낙관적 락), 인덱스 `idx_products_status_id (status, id)`
 
----
+## 배경
 
-## 결정
+상품 목록 조회(`GET /api/products`)는 무한 스크롤 피드 UX로 노출됩니다.<br>
+사용자가 스크롤을 내릴수록 뒤에 있는 페이지를 요청합니다.
 
-**커서 페이징** 채택. 정렬 키는 `id DESC`, 커서는 앞 페이지 마지막 id.
+일반적인 오프셋 방식 페이징은 페이지가 뒤로갈수록 응답 시간이 비례해서 느려집니다.
+N번째 페이지를 조회하려면 DB가 앞의 `N×size` 행을 먼저 스캔하고 버린 뒤 size개만
+반환하기 때문입니다.<br>
+뒤에 있는 데이터 일수록 비용이 증가합니다.
 
-쿼리 형태:
-```sql
-SELECT * FROM products
- WHERE status = 'AVAILABLE'
-   AND (:cursor IS NULL OR id < :cursor)
- ORDER BY id DESC
- LIMIT :size + 1;
-```
+- OFFSET이 큰 페이지에서도 일관된 응답 시간
+- 무한 스크롤 UX에 적합한 페이징 방식
+- 정렬 키(`id`)에 대한 기존 인덱스를 효율적으로 활용
 
-`size + 1` 트릭으로 다음 페이지 존재 여부(`hasNext`) 를 정확히 판정.
+<br>
 
----
+## 결론
 
-## 옵션 비교
+상품 목록 조회의 페이징을 `커서 페이징`으로 구현
 
-| 축 | 오프셋 `LIMIT/OFFSET` | 커서 `id < lastId` |
+- 정렬 키 `id DESC`, 커서는 앞 페이지의 마지막 id (`WHERE id < :cursor`)
+- 임의 페이지 점프 없음 (다음/이전만)
+
+## 비교
+
+|  | 커서 페이징 | 오프셋 페이징 |
 |---|---|---|
-| 깊은 페이지 비용 | 버려질 행까지 모두 스캔 → `O(offset + size)` | 인덱스 시크 한 번 → `O(log n + size)` |
-| 신규 INSERT 중 일관성 | 페이지 어긋남 가능 (중복/누락) | 안정 |
-| 임의 페이지 점프 (예: 1000페이지) | 가능 | 불가 (다음/이전만) |
-| 총 페이지 수 표시 | `COUNT(*)` 가능 | 별도 쿼리 필요 |
-| 본 인덱스 활용 | 별도 정렬 필요할 수 있음 | `idx_products_status_id` 가 직접 지원 |
-| UX 적합 | 페이지 번호 UI | 무한 스크롤 / 피드 |
+| OFFSET이 큰 페이지 비용 | `O(log n + size)` - 일정 | `O(offset + size)` - 비례 증가 |
+| 임의 페이지 점프 | 불가 (다음/이전만) | 가능 |
+| UX 적합 | 무한 스크롤·피드 | 페이지 번호 UI |
 
-본 프로젝트의 UX 는 **무한 스크롤 / 최신순 피드** 가정 → 커서가 자연.
+**오프셋 페이징 선택 X**
+- 무한 스크롤 피드로 페이지 번호 점프가 필요 없음
+- 데이터가 늘어날수록 일관된 응답 시간 보장 불가
 
----
+<br>
 
-## 측정 — Before/After
+## 구현 방법
 
-> 측정 환경: 로컬 Docker MySQL 8.0, 10만 건 AVAILABLE 상품, 50건/페이지, 워밍업 5회 + 100회 반복 p50.
->
-> 실행: `./gradlew benchmark` (`CursorPagingBenchmarkTest`).
+### 1. 쿼리
 
-### 응답 시간 (p50, 워밍업 5회 + 측정 100회)
+```java
+@Query(
+    SELECT p FROM Product p
+     WHERE p.status = :status
+       AND (:cursor IS NULL OR p.id < :cursor)
+     ORDER BY p.id DESC
+)
+List<Product> findCursorPage(
+    @Param("status") ProductStatus status,
+    @Param("cursor") Long cursor,
+    Pageable pageable
+);
+```
 
-| 시나리오 | OFFSET | CURSOR | 속도비 |
+- `:cursor IS NULL` 분기 - 첫 페이지와 다음 페이지를 같은 쿼리로 처리
+- `LIMIT size + 1` - size+1개 받아 `hasNext` 판정
+
+### 측정 결과
+
+| 시나리오 | OFFSET | CURSOR | 개선 |
 |---|---|---|---|
-| 1페이지 (`offset=0` / `cursor=null`) | 1.21 ms | 1.16 ms | 1.0x — 차이 없음 |
-| 깊은 페이지 (`offset=99000` / `cursor=1001`) | 14.40 ms | 0.71 ms | **20.1x** |
+| 1페이지 | 1.21ms | 1.16ms | 1.0x (차이 없음) |
+| 후반 페이지 (cursor=1001) | 14.40ms | 0.71ms | **20.1x** |
 
-### EXPLAIN 비교 (깊은 페이지)
+- 10만 건 환경, p50 기준, 100회 반복
+- 기존 인덱스 `idx_products_status_id` 의 covering index 사용으로 테이블 row I/O 없음
 
-**OFFSET 99000:**
-```
-type=ref           key=idx_products_status_id   key_len=1   ref=const
-rows=49737         Extra=Backward index scan; Using index
-```
+<br>
 
-**CURSOR `id < 1001`:**
-```
-type=range         key=idx_products_status_id   key_len=9   ref=null
-rows=999           Extra=Using where; Backward index scan; Using index
-```
+## 에러 상황
 
-### 핵심 해석
+### 1. 임의 페이지 점프 불가
 
-| 항목 | OFFSET | CURSOR | 의미 |
-|---|---|---|---|
-| `type` | `ref` | `range` | CURSOR 는 범위 시크. 더 정밀 |
-| `key_len` | 1 byte | 9 bytes (`status` 1 + `id` 8) | CURSOR 는 인덱스의 status+id 둘 다 활용해서 좁힘 |
-| `rows` (옵티마이저 추정) | 49,737 | 999 | CURSOR 가 ~50× 적게 스캔 |
-| `Using index` | ✅ | ✅ | 둘 다 covering index — 테이블 row 접근 없이 인덱스만으로 응답 |
+상황 : 커서 페이징은 `다음 / 이전` 만 가능. `1000페이지로 바로 이동` 같은 점프 불가
 
-→ 인덱스가 같아도 **OFFSET 은 N행 훑은 뒤 N-50 을 버림**, **CURSOR 는 인덱스 시크 + 50건만 읽음**. 페이지가 깊어질수록 격차 비례 증가.
+이유 : 무한 스크롤 피드 가정으로 번호 점프 X
 
----
+상태 : 이후 점프 필요 할 시 부분 오프셋 또는 별도 쿼리 적용
 
-## 결과 요약
+### 2. 복합 정렬 미지원
 
-- 깊은 페이지에서 커서가 **20.1× 빠름** (14.40ms → 0.71ms, p50 기준).
-- 1페이지에선 차이 미미 (1.21 vs 1.16) — 인덱스 시크 비용은 페이지 깊이와 무관.
-- 같은 인덱스 `idx_products_status_id (status, id)` 를 두 쿼리 모두 사용하지만, OFFSET 은 스캔 후 버림, CURSOR 는 시크 후 즉시 컷 — 옵티마이저 추정 행 수 49,737 vs 999.
-- 둘 다 covering index 라 테이블 row I/O 없이 인덱스만으로 답함 → CURSOR 의 절대 응답 시간이 1ms 미만.
+상황 : `id`정렬만 지원. 다른 정렬(가격, 수정시간)은 적용 불가
 
----
+이유 : 아직 까지는 단일 정렬로 충분
 
-## 트레이드오프 / 한계
+상태 : 이후 필요할 시 정렬 옵션 및 새 인덱스 추가
 
-- 임의 페이지 점프(예: 1000페이지로 직접 이동) 불가능. 본 시나리오는 피드형 UX 라 영향 없음.
-- 동률 정렬 키는 `id DESC` 하나라 안전하지만, 향후 `priceASC` 같은 정렬이 필요해지면 복합 커서(`(price, id) < (lastPrice, lastId)`) 가 필요. 그때 ADR 갱신.
-- 운영 모니터링: 깊은 cursor 가 들어왔을 때도 `rows ≈ size+1` 인지 EXPLAIN 으로 확인.
+<br>
 
----
+## 참조
 
-## 후속 작업
-
-- [x] `./gradlew benchmark` 실행 + 본 문서 수치 채움 (2026-05-05).
-- [ ] (선택) 복합 정렬이 필요해지면 별도 ADR 로 분기.
-- [ ] Phase 3 마무리 시 `docs/adr/INDEX.md` 또는 통합 README 에서 본 ADR 인용.
-
----
-
-## 재현 방법
-
-```bash
-docker compose up -d                         # MySQL 8 기동
-./gradlew benchmark                          # 시드 + 측정 + EXPLAIN 출력
-```
-
-`build/reports/tests/benchmark/index.html` 에서 표준 출력 확인 가능. 시드는 idempotent — 두 번째 실행부터는 skip 되어 ~5초만 소요.
+- [ProductRepository](../../src/main/java/com/portfolio/used_trade/product/repository/ProductRepository.java) — 커서 페이징 쿼리 (`@Query`)
+- [Product](../../src/main/java/com/portfolio/used_trade/product/domain/Product.java) — 인덱스 `idx_products_status_id` 선언 위치
+- [ProductCursorPageResponse](../../src/main/java/com/portfolio/used_trade/product/dto/ProductCursorPageResponse.java) — 커서 페이지 응답 형식 (items + nextCursor + hasNext)
+- [CursorPagingBenchmarkTest](../../src/test/java/com/portfolio/used_trade/product/bench/CursorPagingBenchmarkTest.java) — Before/After 정량 측정 (10만 건, p50, 100회)
