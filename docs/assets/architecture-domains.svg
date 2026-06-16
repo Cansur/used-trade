@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 230" font-family="'Malgun Gothic','맑은 고딕',sans-serif">
+  <title>모듈러 모놀리스 도메인 의존 구조</title>
+  <desc>단일 Spring Boot 애플리케이션 내 5개 도메인이 cross-cutting common에 단방향 의존</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#444"/>
+    </marker>
+  </defs>
+
+  <!-- 외곽 라벨 -->
+  <text x="320" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#555">모듈러 모놀리스</text>
+
+  <!-- 외곽 점선 박스 (모놀리스 경계) -->
+  <rect x="10" y="24" width="620" height="196" rx="6" fill="none" stroke="#bbb" stroke-width="1.3" stroke-dasharray="6 4"/>
+
+  <!-- 도메인 5개 -->
+  <rect x="46" y="44" width="100" height="42" rx="3" fill="#f4f4f4" stroke="#222" stroke-width="1.2"/>
+  <text x="96" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#111">user</text>
+
+  <rect x="158" y="44" width="100" height="42" rx="3" fill="#f4f4f4" stroke="#222" stroke-width="1.2"/>
+  <text x="208" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#111">product</text>
+
+  <rect x="270" y="44" width="100" height="42" rx="3" fill="#f4f4f4" stroke="#222" stroke-width="1.2"/>
+  <text x="320" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#111">trade</text>
+
+  <rect x="382" y="44" width="100" height="42" rx="3" fill="#f4f4f4" stroke="#222" stroke-width="1.2"/>
+  <text x="432" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#111">chat</text>
+
+  <rect x="494" y="44" width="100" height="42" rx="3" fill="#f4f4f4" stroke="#222" stroke-width="1.2"/>
+  <text x="544" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#111">payment</text>
+
+  <!-- 화살표 5개 (common으로 수렴) -->
+  <g stroke="#444" stroke-width="1.3" fill="none">
+    <line x1="96" y1="86" x2="240" y2="144" marker-end="url(#arrow)"/>
+    <line x1="208" y1="86" x2="280" y2="144" marker-end="url(#arrow)"/>
+    <line x1="320" y1="86" x2="320" y2="144" marker-end="url(#arrow)"/>
+    <line x1="432" y1="86" x2="360" y2="144" marker-end="url(#arrow)"/>
+    <line x1="544" y1="86" x2="400" y2="144" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- common (가운데, 작게) -->
+  <rect x="200" y="144" width="240" height="42" rx="3" fill="#ececec" stroke="#222" stroke-width="1.2"/>
+  <text x="320" y="170" text-anchor="middle" font-size="13" font-weight="700" fill="#111">common</text>
+</svg>

@@ -1,62 +1,25 @@
 # used-trade
 
-> Spring Boot 3 · Java 21 · MySQL 8 · Redis 7 · AWS 모듈러 모놀리스 중고거래 백엔드
+> 모듈러 모놀리스 중고거래 백엔드
+
+<br>
 
 ![cross-instance chat broadcast via Redis Pub/Sub](docs/demo/screenshots/05-chat.gif)
 
-> ALB 뒤 두 EC2 인스턴스에 흩어진 채팅 참여자에게 Redis Pub/Sub 채널 `chat.broadcast` 가 메시지를 릴레이.
+> Redis Pub/Sub 채널을 사용해 멀티 인스턴스 채팅 참여자에게 메시지를 브로드캐스트
 
-## 측정 결과
-
-- **동시성 제어** — 동일 상품 N=50 동시 예약, 중복 거래 3건 → 0건, p95 193ms ([ADR-2](docs/adr/002-optimistic-locking.md))
-- **커서 페이징** — 깊은 페이지 OFFSET 14.40ms → CURSOR 0.71ms (20.1배) ([ADR-4](docs/adr/004-cursor-pagination.md))
-- **멀티 인스턴스 채팅** — 두 JVM 간 메시지 일관성 ([ADR-3](docs/adr/003-redis-pubsub-chat.md))
-- **Saga 보상** — PG 실패 시 `trade.cancel` + Product 상태 복원 자동 ([TradeSagaService](src/main/java/com/portfolio/used_trade/trade/service/TradeSagaService.java))
-- **138 테스트 통과** (단위 + 통합, 0 실패)
-
----
+<br><br>
 
 ## 아키텍처
+> 단일 Spring Boot 애플리케이션 + cross-cutting common
 
-### 로컬
+<img src="docs/assets/architecture-domains.svg" alt="모듈러 모놀리스 도메인 의존 구조" width="600" />
 
-```
-            ┌────────────────────────────────────────────────┐
-            │  Spring Boot 3.5 (Java 21)                     │
-  HTTP/WS   │  ┌──────┐ ┌────────┐ ┌──────┐ ┌──────┐ ┌─────┐ │
-   ─────►   │  │ user │ │product │ │trade │ │ chat │ │ pay │ │
-            │  └──┬───┘ └────┬───┘ └──┬───┘ └──┬───┘ └──┬──┘ │
-            │     └──────────┴────────┼────────┴────────┘    │
-            │                    common (config / exception) │
-            └──────────────┬───────────────┬─────────────────┘
-                           │ JDBC          │ Lettuce
-                       ┌───▼────┐      ┌───▼───┐
-                       │ MySQL  │      │ Redis │
-                       └────────┘      └───────┘
-```
+<br>
 
-### AWS (`us-east-1`)
+<img width="741" height="303" alt="AWS 배포 구성" src="docs/assets/AWS-deploy.png" />
 
-```
-                    Internet
-                       │
-                  ┌────▼────┐
-                  │   ALB   │
-                  └────┬────┘
-            ┌──────────┴──────────┐
-       ┌────▼─────┐         ┌─────▼────┐
-       │  EC2 #1  │         │  EC2 #2  │
-       │  Spring  │         │  Spring  │
-       └──┬───┬───┘         └──┬───┬───┘
-          │   │                │   │
-          │   └─── Redis Pub/Sub ──┘   │   (chat.broadcast)
-          │                            │
-       ┌──▼────────────┐         ┌─────▼──────┐
-       │  ElastiCache  │         │ RDS MySQL  │
-       └───────────────┘         └────────────┘
-```
-
----
+<br><br>
 
 ## 기술 스택
 
@@ -68,51 +31,41 @@
 | 인프라 | AWS (EC2 / ALB / RDS / ElastiCache / ECR), Docker, GitHub Actions |
 | 빌드 / 테스트 | Gradle, JUnit 5, Mockito, AssertJ, Spring Boot Test |
 
----
+<br><br>
 
-## 빠른 시작 (로컬)
+## 측정 결과
+
+|주제|시나리오|결과|
+|---|---|---|
+|동시성 제어|동일 상품 N=50 동시 예약|중복 거래 3건 → 0건, p95 193ms|
+|커서 페이징|10만 건 중 뒤쪽 페이지 조회|OFFSET 14.40ms → CURSOR 0.71ms (20.1배)|
+|멀티 인스턴스 채팅|두 JVM 간 메시지 전달|Redis Pub/Sub로 메시지 일관성 확보|
+|Saga 보상 (부분 구현)|PG 결제 실패|trade.cancel + Product 상태 자동 복원|
+
+<br><br>
+
+## 로컬 배포
 
 ```bash
-cp .env.example .env       # 비밀번호 / JWT_SECRET 채우기
-docker compose up -d       # MySQL + Redis 기동
-./gradlew bootRun          # 앱 실행 (8080)
+cp .env.example .env
+docker compose up -d
+./gradlew bootRun
 ```
 
 확인:
 ```bash
 curl http://localhost:8080/api/hello/health-db
-# {"data":{"mysql":"UP","redis":"UP"}}
 ```
 
 테스트 / 벤치마크:
 ```bash
-./gradlew test             # 단위 + 통합 (138 tests)
-./gradlew benchmark        # 커서 페이징 벤치 (10만건 시드 후 100회 반복 p50)
+./gradlew test
+./gradlew benchmark
 ```
 
-데모 자료 — [docs/demo/](docs/demo/):
-- Postman Collection + Environment (import 한 번으로 12개 API 시연)
-- `chat-demo.html` — 두 탭으로 cross-instance broadcast 직접 시연
+AWS 배포 : [docs/deploy/aws-setup.md](docs/deploy/aws-setup.md)
 
----
-
-## AWS 배포
-
-배포 절차는 [docs/deploy/aws-setup.md](docs/deploy/aws-setup.md). 비용 절감을 위해 평소엔 정지 — 시연 시 ~15분 재배포.
-
-| EC2 (2대, 서로 다른 AZ) | ALB |
-|---|---|
-| ![ec2](docs/demo/screenshots/07a-ec2.png) | ![alb](docs/demo/screenshots/07b-alb.png) |
-
-| Target Group (2/2 healthy) | RDS MySQL |
-|---|---|
-| ![tg](docs/demo/screenshots/07b-alb-targets.png) | ![rds](docs/demo/screenshots/07c-rds.png) |
-
-| ElastiCache Redis |
-|---|
-| ![redis](docs/demo/screenshots/07d-redis.png) |
-
----
+<br><br>
 
 ## 프로젝트 구조
 
@@ -126,24 +79,17 @@ com.portfolio.used_trade/
 └── common/    config / exception / response / base entity
 ```
 
-의존 방향: 도메인 → common 만 허용 (단방향).
-
----
-
 ## 문서
 
-### Architecture Decision Records — 왜 그렇게 선택했나
-- [ADR-1 — 모듈러 모놀리스 (vs MSA)](docs/adr/001-modular-monolith.md)
-- [ADR-2 — 낙관적 락 + Spring Retry](docs/adr/002-optimistic-locking.md)
-- [ADR-3 — Redis Pub/Sub 멀티 인스턴스 채팅](docs/adr/003-redis-pubsub-chat.md)
-- [ADR-4 — 커서 페이징](docs/adr/004-cursor-pagination.md)
-- [ADR-5 — Saga Orchestration (부분 구현)](docs/adr/005-saga-orchestration.md)
-- [ADR-6 — AWS 배포 스택 선택](docs/adr/006-aws-stack-choice.md)
+**ADR**
+- [모듈러 모놀리스](docs/adr/001-modular-monolith.md)
+- [낙관적 락](docs/adr/002-optimistic-locking.md)
+- [Redis Pub/Sub](docs/adr/003-redis-pubsub-chat.md)
+- [커서 페이징](docs/adr/004-cursor-pagination.md)
+- [Saga (부분 구현)](docs/adr/005-saga-orchestration.md)
+- [AWS 배포 스택](docs/adr/006-aws-stack-choice.md)
 
-### Guides — 어떻게 작동하나
-- [프로젝트 구조](docs/guides/project-structure.md) — 패키지 경계, 의존 규칙
-- [테스트 전략](docs/guides/testing-strategy.md) — 138 테스트 분류, 도구, 의사결정
-- [Docker](docs/guides/docker.md) — compose / Dockerfile 결정, ECR 워크플로우
-
-### 배포
-- [AWS 배포 절차](docs/deploy/aws-setup.md) — 수동 CLI 명령 누적
+**가이드**
+- [프로젝트 구조](docs/guides/project-structure.md)
+- [테스트 전략](docs/guides/testing-strategy.md)
+- [Docker](docs/guides/docker.md)
