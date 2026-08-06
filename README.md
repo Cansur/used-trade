@@ -88,8 +88,3 @@ com.portfolio.used_trade/
 - [커서 페이징](docs/adr/004-cursor-pagination.md)
 - [Saga (부분 구현)](docs/adr/005-saga-orchestration.md)
 - [AWS 배포 스택](docs/adr/006-aws-stack-choice.md)
-
-**가이드**
-- [프로젝트 구조](docs/guides/project-structure.md)
-- [테스트 전략](docs/guides/testing-strategy.md)
-- [Docker](docs/guides/docker.md)

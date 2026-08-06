@@ -1,37 +1,53 @@
-# AWS 배포 가이드 — Stage 2
+# AWS 배포 가이드
 
-> Stage 1 (Dockerization) 이후 실제 AWS 환경에 배포한 셋업 명령 누적.
-> 데모 시연용. 운영 패턴은 Terraform 또는 ECS/Fargate 권장 — ADR 한 줄로 메모.
+> Docker 이미지가 빌드된 상태에서, AWS CLI 명령으로 
+> EC2 + ALB + RDS + ElastiCache 환경을 재현할 수 있도록 정리한 절차.
 
-## 결정 요약
+## 스펙 결정 이유
 
 | 항목 | 선택 | 이유 |
 |---|---|---|
-| 리전 | `us-east-1` | RDS / EC2 / ElastiCache ~15-24% 저렴, 프리티어 동일, latency 차이는 데모에 무관 |
-| 호스팅 | EC2 + Docker | 친숙, 명시적, 다중 인스턴스 시연 명확 |
-| DB / Redis | RDS + ElastiCache (풀 매니지드) | 운영 일관성 + 면접 어필. 비용은 데모 시에만 켜고 끔 |
-| VPC | Default VPC + public subnets | NAT Gateway $32/월 회피. SG 로 격리 |
-| IaC | 수동 CLI (이 문서) | 단순, 학습 곡선 낮음. Terraform 은 다음 단계 |
-| 도메인 | ALB DNS 그대로 | 데모용. 운영은 Route 53 |
+| 리전 | us-east-1 | 다른 리전 대비 15~24% 저렴 |
+| 컴퓨트 | EC2 (Docker) | EC2 를 직접 조작하며 학습 |
+| DB / Redis | RDS + ElastiCache | 백업·패치·모니터링을 AWS 가 처리하여 운영 부담 최소화 |
+| VPC | Default VPC | 추가 비용 0 |
+| IaC | AWS CLI 수동 스크립트 | 빠르게 적용 가능 |
+| 도메인 | ALB 기본 DNS | 추가 비용 0 |
 
 ## 환경 변수
 
-매 셸 세션 시작 시 source. 비밀들은 `/tmp/usedtrade-secrets.env` 에 별도 저장 (git ignore).
+터미널을 새로 열 때마다 아래 명령들을 실행해야 합니다. export 로 
+설정한 환경 변수는 셸 세션이 끝나면 사라지기 때문입니다.
+
+DB 비밀번호·JWT 키·ARN 같은 민감한 값은 `/tmp/usedtrade-secrets.env` 
+파일에 따로 저장하고, 매번 source 로 로드합니다.
 
 ```bash
-export PATH="/c/Program Files/Amazon/AWSCLIV2:$PATH"   # Git Bash 의 PATH 수정 필요할 때
-export MSYS_NO_PATHCONV=1                              # /actuator/health 같은 path 자동 변환 비활성화
+# ─── Git Bash / Windows 환경 (Windows 사용자만) ───
+export PATH="/c/Program Files/Amazon/AWSCLIV2:$PATH"
+export MSYS_NO_PATHCONV=1
 
+# ─── AWS 기본 설정 ───
 export AWS_REGION=us-east-1
-export AWS_ACCOUNT_ID=<YOUR-AWS-ACCOUNT-ID>      # `aws sts get-caller-identity --query Account --output text` 로 확인
-export PROJECT=usedtrade
-export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT}"
-export VPC_ID=<YOUR-VPC-ID>                       # `aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text`
+export AWS_ACCOUNT_ID=<YOUR-AWS-ACCOUNT-ID>
 
-source /tmp/usedtrade-secrets.env   # DB_PASSWORD / REDIS_PASSWORD / JWT_SECRET / 각 ARN
+# ─── 프로젝트 식별자 ───
+export PROJECT=usedtrade
+export VPC_ID=<YOUR-VPC-ID>
+export ECR_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${PROJECT}"
+
+# ─── 시크릿 로드 (DB_PASSWORD / JWT_SECRET / 각 ARN) ───
+source /tmp/usedtrade-secrets.env
 ```
 
-## 1. ECR 레포지토리
+### `<YOUR-...>` 값 확인 방법
+
+- **AWS_ACCOUNT_ID**: `aws sts get-caller-identity --query Account --output text`
+- **VPC_ID**: `aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text`
+
+## 1. ECR 저장소 생성 및 이미지 업로드
+
+로컬 PC의 Docker 이미지를 AWS ECR에 올립니다.
 
 ```bash
 aws ecr create-repository \
@@ -41,7 +57,6 @@ aws ecr create-repository \
   --encryption-configuration encryptionType=AES256
 ```
 
-이미지 push:
 ```bash
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin \
@@ -53,9 +68,59 @@ docker push "${ECR_URI}:v1"
 docker push "${ECR_URI}:latest"
 ```
 
-## 2. AWS Budgets — $10/월 알람
+## 2. AWS Budgets 알람 설정
+
+AWS 비용이 예상보다 늘어나면 이메일로 알림을 받도록 월 예산 임계값을 $10 으로 설정합니다.
 
 `/tmp/budget.json` 과 `/tmp/notifications.json` 에 JSON 작성 (본문은 commit 참고).
+
+<details> 
+<summary>budget.json 예시</summary>
+
+```json
+{
+  "BudgetName": "usedtrade-monthly-10usd",
+  "BudgetLimit": { "Amount": "10", "Unit": "USD" },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST"
+}
+```
+</details>
+
+<details>
+<summary>notifications.json 예시</summary>
+
+`you@example.com` 부분은 실제 알림 받을 이메일로 치환 후 실행
+
+```json
+[ 
+  {
+    "Notification": {
+      "NotificationType": "ACTUAL",
+      "ComparisonOperator": "GREATER_THAN",
+      "Threshold": 80,
+      "ThresholdType": "PERCENTAGE"
+    },
+    "Subscribers": [
+      { "SubscriptionType": "EMAIL", "Address": "you@example.com" }
+    ]
+  },
+  {
+    "Notification": {
+      "NotificationType": "FORECASTED",
+      "ComparisonOperator": "GREATER_THAN",
+      "Threshold": 100,
+      "ThresholdType": "PERCENTAGE"
+    },
+    "Subscribers": [
+      { "SubscriptionType": "EMAIL", "Address": "you@example.com" }
+    ]
+  }
+]
+```
+
+</details>
+<br>
 
 ```bash
 aws budgets create-budget \
@@ -64,7 +129,8 @@ aws budgets create-budget \
   --notifications-with-subscribers "file://$(cygpath -m /tmp/notifications.json)"
 ```
 
-## 3. Security Groups (4 종)
+## 3. Security Groups
+리소스 사이 트래픽이 필요한 경로만 허용되도록 4개의 방화벽 그룹을 설정합니다.
 
 ```bash
 # sg-alb : 80/443 from anywhere
@@ -97,6 +163,7 @@ aws ec2 authorize-security-group-ingress --group-id <SG_REDIS> \
 ```
 
 ## 4. RDS MySQL
+백엔드가 사용할 MySQL 8 데이터베이스 인스턴스를 생성합니다.
 
 ```bash
 # 서브넷 그룹 (최소 2 AZ)
@@ -121,6 +188,7 @@ aws rds create-db-instance \
 ```
 
 ## 5. ElastiCache Redis
+백엔드가 사용할 Redis 7 인스턴스를 생성합니다.
 
 ```bash
 aws elasticache create-cache-subnet-group \
@@ -137,6 +205,7 @@ aws elasticache create-cache-cluster \
 ```
 
 ## 6. EC2 IAM Role
+EC2 가 ECR 이미지 pull 과 SSM 원격 접속을 할 수 있도록 IAM 역할을 부여합니다.
 
 ```bash
 # trust policy
@@ -164,7 +233,8 @@ aws iam add-role-to-instance-profile \
   --role-name usedtrade-ec2-role
 ```
 
-## 7. ALB + Target Group + Listener
+## 7. 로드 밸런서 스택
+외부 트래픽을 EC2 로 전달하기 위한 로드 밸런서 스택(ALB · Target Group · Listener)을 구성합니다.
 
 ```bash
 # ALB
@@ -192,7 +262,10 @@ aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" \
   --default-actions Type=forward,TargetGroupArn="$TG_ARN"
 ```
 
-## 8. EC2 launch (user-data 로 docker pull + run)
+## 8. EC2 인스턴스 시작 및 등록
+`user-data` 로 앱을 자동 실행하는 EC2 인스턴스를 시작하고 Target Group 에 등록합니다.
+
+`user-data` = EC2 가 처음 부팅될 때 한 번 자동 실행되는 스크립트.
 
 `/tmp/user-data.sh` 의 핵심 흐름:
 ```bash
@@ -230,11 +303,16 @@ aws elbv2 register-targets --target-group-arn "$TG_ARN" \
   --targets Id="<INSTANCE_ID>",Port=8080
 ```
 
-ADR-3 의 cross-instance Redis Pub/Sub 시연 — 같은 user-data 로 EC2 #2 를 다른 AZ (us-east-1b) 에 launch + TG 에 등록하면 두 인스턴스가 같은 Redis 를 공유.
+> **멀티 인스턴스 시연 ([ADR-3](../adr/003-redis-pubsub-chat.md))**: 
+> 두 번째 EC2 인스턴스를 다른 가용영역 (us-east-1b) 에 같은 user-data 로 
+> 시작하고 같은 Target Group 에 등록하면, 두 EC2 가 같은 Redis 인스턴스를 
+> 공유하게 됩니다. 이 상태에서 한 EC2 로 온 채팅 메시지가 Redis Pub/Sub 
+> 를 통해 다른 EC2 의 사용자에게 전달되는 흐름을 시연할 수 있습니다.
 
-## 9. 진단 — SSM Session
+## 9. EC2 진단 (SSM)
 
-SSH 키 없이 EC2 안 진입:
+SSH 키 없이 EC2 안에 접속해 로그와 상태를 확인합니다.
+
 ```bash
 # 명령 원격 실행 (output 비동기)
 CMD_ID=$(aws ssm send-command \
@@ -251,13 +329,15 @@ aws ssm get-command-invocation \
 aws ssm start-session --target <INSTANCE_ID>
 ```
 
-## 10. 데모 정리 — `cleanup.sh`
+## 10. 리소스 정리 (cleanup.sh)
 
-데모 끝나면 다음 스크립트 실행해 비용 0 으로. ECR + IAM + Budget 은 무료라 그대로 유지 가능.
+데모가 끝나면 유료 리소스를 정리해 요금을 0 으로 만듭니다.
 
-`docs/deploy/cleanup.sh` 참고.
+정리 스크립트: [`docs/deploy/cleanup.sh`](cleanup.sh)
 
-## 비용 요약 (us-east-1, 24h 풀가동 기준)
+## 비용 요약 (us-east-1, 2026-08 기준)
+
+> AWS 가격은 변동될 수 있음
 
 | 리소스 | 시간당 | 24h | 한 달 |
 |---|---|---|---|
@@ -270,4 +350,4 @@ aws ssm start-session --target <INSTANCE_ID>
 | **데모 패턴 (5h/월)** | — | — | **~$0.5** |
 | **24h 풀가동 시** | **~$0.05** | **~$1.2** | **~$37** |
 
-데모 끝나면 **즉시 cleanup.sh** 실행 권장.
+데모 끝나면 **즉시 [cleanup.sh](cleanup.sh)** 실행 권장.
