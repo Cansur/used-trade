@@ -46,5 +46,5 @@
 | 4 | [커서 페이징](adr/004-cursor-pagination.md) | Accepted |
 | 5 | [Saga Orchestration (부분 구현)](adr/005-saga-orchestration.md) | Accepted |
 | 6 | [AWS 배포 스택](adr/006-aws-stack-choice.md) | Accepted |
-| 7 | 상품 등록 AI 보조 | 예정 — [todo.md](todo.md) SPEC-2 |
+| 7 | [상품 등록 AI 보조](adr/007-listing-assist.md) | Proposed (초안) |
 | 8 | Outbox / PG 연동 | 검토 — [todo.md](todo.md) OUTBOX-1 |

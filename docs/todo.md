@@ -8,6 +8,7 @@
 
 ## 진행 중
 
+
 - [ ] **WIKI-4** Obsidian 에서 `docs/` 폴더를 볼트로 열기 + 설정 → 파일 및 링크 → "[[위키링크]] 사용" 끄기 (사람)
 
 
@@ -17,7 +18,6 @@
 
 ### M1. 명세 — 무엇을 만들지 확정
 
-- [ ] **SPEC-2** ADR-007 초안 — `assist` 도메인 위치, Port 설계, 폴백 전략, Redis 키 설계
 - [ ] **SPEC-3** QA 테스트 리스트 — 정상 흐름 + 장애 주입 (지연, 타임아웃, 깨진 JSON, 없는 카테고리, 프롬프트 인젝션)
 
 ### M2. 상품 등록 AI 보조 — 구현
@@ -84,6 +84,8 @@
 <br>
 
 ## 완료
+
+- [x] **SPEC-2** ADR-007 초안 — 근거: [adr/007-listing-assist.md](adr/007-listing-assist.md) (Proposed). 별도 `assist` 도메인 + product 조회 Service, `LlmClientPort` (실패 종류별 sealed 결과), 폴백 표, Redis 키 2종 (분 단위 고정 윈도우 / 완전 일치 캐시 v1), 가격 신뢰도. 2026-10-30 사람 검토 완료
 
 - [x] **SPEC-4** 가격 기준값 조사 (사람) — 근거: `src/main/resources/seed/price-anchors.csv` 60줄 중 56줄 가격 기입 (2026-10-30, 당근마켓 매물 수동 열람, URL·판매자 정보 미기록). 빈 4줄 (말름 서랍장, 콘서트 티켓, LP, 모바일 상품권) 은 note 에 사유 기록, 생성기가 건너뜀 ([assist-spec](specs/assist-spec.md) 2-6)
 
