@@ -16,13 +16,14 @@
 
 ## 🚧 현재 위치 — 새 세션이면 여기부터
 
-- **단계**: 5-b 완료. 모든 도메인 + AWS 실배포 + Saga + README/문서 정리 끝. **면접 준비 단계**.
-- **브랜치**: `main` (PR #1~#11 모두 머지 완료)
+> **작업 전 반드시 [docs/index.md](docs/index.md) → [roadmap](docs/roadmap.md) → [todo](docs/todo.md) 를 먼저 읽는다.**
+> 작업이 끝나면 [docs/policies.md](docs/policies.md) 1절대로 todo / status 를 같은 커밋에서 갱신한다.
+
+- **단계**: Phase 1, 1.5 (로컬 실행 복구) 완료. 순서: **2 AI 녹이기 (다음, SPEC-1)** → 3 PG 연동 + Outbox → AWS 재배포 ([roadmap](docs/roadmap.md))
+- **테스트**: 코드 변경 없이 환경(DB, Docker 등)만 확인할 땐 `./gradlew test --rerun` — 그냥 `test` 는 입력이 그대로면 UP-TO-DATE 로 건너뜀
+- **다음 할 일**: [docs/todo.md](docs/todo.md) 의 "진행 중" → "대기" 순서
 - **AWS**: cleanup 완료 — 평소 정지 상태. 시연 시 [docs/deploy/aws-setup.md](docs/deploy/aws-setup.md) Step 7+8 재실행 (~15분)
-- **다음 작업 후보**:
-  - (선택) ADR-7 **Outbox 패턴** — 부분 Saga 의 T2/크래시/보상-실패 자동화. ~1.5-2일.
-  - (선택) 면접 직전 AWS 재배포
-  - 그 외엔 면접 학습 — 아래 문서 참고
+- ADR 번호: 007 = 상품 등록 AI 보조, 008 = Outbox / PG 연동
 
 ### 새 세션 용도별 진입
 
