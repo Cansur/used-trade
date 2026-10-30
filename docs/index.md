@@ -29,6 +29,7 @@
 | 규칙 | [policies.md](policies.md) | 문서·TODO·코드·측정 규칙 |
 | 규칙 | [ai-workflow.md](ai-workflow.md) | 작업 AI / 검수 AI 분리 운영 |
 | 명세 | [specs/assist-spec.md](specs/assist-spec.md) | 상품 등록 AI 보조 요청 명세 (SPEC-1) |
+| 명세 | [specs/assist-qa.md](specs/assist-qa.md) | 상품 등록 AI 보조 QA 테스트 리스트 (SPEC-3) |
 | 구조 | [guides/project-structure.md](guides/project-structure.md) | 패키지 경계, 의존 규칙, DTO 패턴 |
 | 구조 | [guides/testing-strategy.md](guides/testing-strategy.md) | 테스트 분류, 도구 결정 |
 | 구조 | [guides/docker.md](guides/docker.md) | compose / Dockerfile, ECR |
