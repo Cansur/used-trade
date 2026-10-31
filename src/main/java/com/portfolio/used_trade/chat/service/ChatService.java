@@ -11,9 +11,9 @@ import com.portfolio.used_trade.chat.repository.MessageRepository;
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.product.domain.Product;
-import com.portfolio.used_trade.product.repository.ProductRepository;
+import com.portfolio.used_trade.product.service.ProductService;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -54,8 +54,8 @@ public class ChatService {
 
     private final ChatRoomRepository chatRoomRepository;
     private final MessageRepository messageRepository;
-    private final UserRepository userRepository;
-    private final ProductRepository productRepository;
+    private final UserService userService;
+    private final ProductService productService;
 
     // ---------- 채팅방 ----------
 
@@ -72,10 +72,8 @@ public class ChatService {
      */
     @Transactional
     public ChatRoomResponse createOrGetRoom(Long buyerId, Long productId) {
-        User buyer = userRepository.findById(buyerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        User buyer = userService.getUser(buyerId);
+        Product product = productService.getProduct(productId);
 
         ChatRoom room = chatRoomRepository.findByProductIdAndBuyerId(productId, buyerId)
                 .orElseGet(() -> chatRoomRepository.save(ChatRoom.create(product, buyer)));
@@ -107,8 +105,7 @@ public class ChatService {
             throw new BusinessException(ErrorCode.INVALID_INPUT);
         }
 
-        User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User sender = userService.getUser(senderId);
         ChatRoom room = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CHAT_ROOM_NOT_FOUND));
 

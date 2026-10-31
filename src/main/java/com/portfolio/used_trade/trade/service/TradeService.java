@@ -3,12 +3,12 @@ package com.portfolio.used_trade.trade.service;
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.product.domain.Product;
-import com.portfolio.used_trade.product.repository.ProductRepository;
+import com.portfolio.used_trade.product.service.ProductService;
 import com.portfolio.used_trade.trade.domain.Trade;
 import com.portfolio.used_trade.trade.dto.TradeResponse;
 import com.portfolio.used_trade.trade.repository.TradeRepository;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.CannotAcquireLockException;
@@ -58,8 +58,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class TradeService {
 
-    private final UserRepository userRepository;
-    private final ProductRepository productRepository;
+    private final UserService userService;
+    private final ProductService productService;
     private final TradeRepository tradeRepository;
 
     /**
@@ -81,10 +81,8 @@ public class TradeService {
     )
     @Transactional
     public TradeResponse reserve(Long buyerId, Long productId) {
-        User buyer = userRepository.findById(buyerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        User buyer = userService.getUser(buyerId);
+        Product product = productService.getProduct(productId);
 
         // Trade.reserve() 정적 팩토리가 다음을 한 번에 처리:
         //   - 본인 상품 차단 (TRADE_SELF_NOT_ALLOWED)

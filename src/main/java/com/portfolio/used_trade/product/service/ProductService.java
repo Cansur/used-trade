@@ -12,7 +12,7 @@ import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
 import com.portfolio.used_trade.product.repository.CategoryRepository;
 import com.portfolio.used_trade.product.repository.ProductRepository;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -52,7 +52,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
     /**
      * 상품 등록. 인증된 사용자 id 와 함께 호출된다.
@@ -62,8 +62,7 @@ public class ProductService {
      */
     @Transactional
     public ProductResponse register(Long sellerId, ProductRegisterRequest request) {
-        User seller = userRepository.findById(sellerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User seller = userService.getUser(sellerId);
         Category category = categoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
 
@@ -81,9 +80,20 @@ public class ProductService {
      * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
      */
     public ProductResponse findById(Long productId) {
-        Product product = productRepository.findById(productId)
+        return ProductResponse.from(getProduct(productId));
+    }
+
+    /**
+     * 다른 도메인이 상품 엔티티를 얻는 유일한 경로 — {@code ProductRepository} 직접 주입 금지 (ADR-1).
+     *
+     * <p>호출자의 쓰기 트랜잭션에 참여하므로 반환 엔티티는 호출자의 영속성 컨텍스트에서 관리된다.
+     * trade 예약의 {@code @Version} 충돌 검출도 그대로 동작한다.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
+     */
+    public Product getProduct(Long productId) {
+        return productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-        return ProductResponse.from(product);
     }
 
     /**
@@ -170,8 +180,7 @@ public class ProductService {
      * 한 메서드에서 같은 가드를 반복하지 않도록 분리.
      */
     private Product loadAndCheckMutable(Long sellerId, Long productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        Product product = getProduct(productId);
         if (!product.isOwnedBy(sellerId)) {
             throw new BusinessException(ErrorCode.NOT_PRODUCT_OWNER);
         }

@@ -55,9 +55,10 @@ MSA 선택 X
 |---|---|---|
 | 도메인 → common | O | |
 | common → 도메인 | X |common이 특정 도메인 알면 cross-cutting 아니게 됨|
-| 도메인 A → 도메인 B (엔티티 직접) | X |JPA 매핑·페치 전략이 얽힘|
+| 도메인 A → 도메인 B (Repository 직접 주입) | X |조회·검증 규칙이 소유 도메인 밖으로 새어 나감 — 에러 상황 3|
+| 도메인 A → 도메인 B (Service 호출, @Bean) | O |cross-domain 의존을 한 곳에 모음. 엔티티가 필요하면 `UserService.getUser`, `ProductService.getProduct`|
+| 도메인 A → 도메인 B (JPA 엔티티 연관 `@ManyToOne`) | △ 허용 |현재 코드의 현실 — 에러 상황 4. 신규 도메인 (assist 등) 은 ID 값만|
 | 도메인 A → 도메인 B (ID 값) | O |분리·이전 시 영향 적음|
-| 도메인 A → 도메인 B (Service 호출, @Bean) | O |cross-domain 의존을 한 곳에 모음|
 
 
 
@@ -90,7 +91,31 @@ MSA 선택 X
 
 이유 : `ProductService`가 `Product DTO`만 돌려주면 `@Version` 충돌 검출이 안됩니다.
 
-결론 : 나중에 해결해야할 문제. 깔끔한 설계는 `ProductService.reserveProduct(id)`가 낙관적 락 전이를 캡슐화하여 `TradeService`가 호출하도록 설계
+결론 : ~~나중에 해결해야할 문제~~ → **해결 (2026-10-30)**
+
+- 같은 위반이 4곳 — `ProductService`·`TradeService`·`ChatService`·`TradeServiceNaive` 가 `UserRepository` / `ProductRepository` 직접 주입
+- 소유 도메인에 조회 메서드 추가 : `UserService.getUser(id)`, `UserService.verifyExists(id)`, `ProductService.getProduct(id)` — NOT_FOUND 처리도 소유 도메인이 책임
+- `@Version` 충돌 검출은 그대로 — `getProduct` 가 호출자의 쓰기 트랜잭션에 참여해 같은 영속성 컨텍스트의 엔티티를 돌려주기 때문. 동시성 테스트 (N=50, ADR-2) 통과로 확인
+- `TradeServiceNaive` 의 products 직접 SQL 은 유지 — ADR-2 Before 측정용으로 일부러 가드를 우회하는 비교 코드
+- 테스트 : 138 → 141 (조회 메서드 테스트 3개 추가), 실패 0
+- 재발 방지 : `ArchitectureTest` (ArchUnit) 로 이 규칙을 테스트에 강제
+
+### 4. 문서와 코드의 불일치 — 엔티티 연관
+
+상황 : 위 표와 Guide 는 "도메인 간 엔티티 직접 참조 금지, ID 만" 이라고 적었는데, 실제 코드는 `@ManyToOne` 으로 다른 도메인 엔티티를 들고 있었습니다 (7곳).
+
+```
+Product → User      Trade → Product, User      ChatRoom → Product, User
+Message → User      Payment → Trade
+```
+
+비교 :
+- ID 로 전환 : 규칙과 일치. 대신 엔티티 6개 + JPQL 조인 + DTO + 테스트 다수 수정, ADR-2·4·5 측정 재수행 필요
+- 연관 유지 + 문서 수정 : 조회·변경 경로만 소유 Service 로 강제 (에러 상황 3). 엔티티 간 컴파일 의존과 LAZY 로딩 경로는 남음
+
+결론 : 연관 유지, 문서를 현실에 맞게 수정. 신규 도메인 (`assist`) 부터는 ID 값만 참조. ID 전환은 도메인을 실제로 분리할 필요가 생길 때 진행
+
+교훈 : 설계 규칙을 문서로만 두면 코드와 어긋나도 모른다 → `ArchitectureTest` (ArchUnit) 로 계층·도메인 경계·common·assist 규칙 4개를 테스트로 강제 (2026-10-31)
 
 <br>
 

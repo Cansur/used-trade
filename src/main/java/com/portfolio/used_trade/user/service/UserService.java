@@ -62,8 +62,29 @@ public class UserService {
      *                                                            (탈퇴 후 토큰 잔여 등)
      */
     public UserResponse findById(Long id) {
+        return UserResponse.from(getUser(id));
+    }
+
+    /**
+     * 다른 도메인이 사용자 엔티티를 얻는 유일한 경로 — {@code UserRepository} 직접 주입 금지 (ADR-1).
+     *
+     * <p>호출자의 쓰기 트랜잭션에 참여하므로 반환 엔티티는 호출자의 영속성 컨텍스트에서 관리된다.
+     *
+     * @throws BusinessException {@link ErrorCode#USER_NOT_FOUND}
+     */
+    public User getUser(Long id) {
         return userRepository.findById(id)
-                .map(UserResponse::from)
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    /**
+     * 존재 여부만 확인 — 엔티티 로딩 없이 exists 쿼리.
+     *
+     * @throws BusinessException {@link ErrorCode#USER_NOT_FOUND}
+     */
+    public void verifyExists(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
     }
 }

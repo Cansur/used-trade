@@ -12,7 +12,7 @@ import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
 import com.portfolio.used_trade.product.repository.CategoryRepository;
 import com.portfolio.used_trade.product.repository.ProductRepository;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -48,7 +48,7 @@ class ProductServiceTest {
 
     @Mock private ProductRepository productRepository;
     @Mock private CategoryRepository categoryRepository;
-    @Mock private UserRepository userRepository;
+    @Mock private UserService userService;
 
     @InjectMocks private ProductService productService;
 
@@ -93,7 +93,7 @@ class ProductServiceTest {
         void happy() {
             // ── Arrange ──
             var request = new ProductRegisterRequest(1L, "아이폰 15", "박스 미개봉", 1_200_000L);
-            given(userRepository.findById(100L)).willReturn(Optional.of(seller));
+            given(userService.getUser(100L)).willReturn(seller);
             given(categoryRepository.findById(1L)).willReturn(Optional.of(electronics));
             given(productRepository.save(any(Product.class))).willAnswer(inv -> {
                 Product p = inv.getArgument(0);
@@ -119,7 +119,7 @@ class ProductServiceTest {
         @DisplayName("토큰은 유효하지만 사용자가 DB 에 없으면 USER_NOT_FOUND")
         void userNotFound() {
             var request = new ProductRegisterRequest(1L, "t", "d", 100L);
-            given(userRepository.findById(100L)).willReturn(Optional.empty());
+            given(userService.getUser(100L)).willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             assertThatThrownBy(() -> productService.register(100L, request))
                     .isInstanceOf(BusinessException.class)
@@ -135,7 +135,7 @@ class ProductServiceTest {
         @DisplayName("잘못된 카테고리 id 면 CATEGORY_NOT_FOUND")
         void categoryNotFound() {
             var request = new ProductRegisterRequest(99L, "t", "d", 100L);
-            given(userRepository.findById(100L)).willReturn(Optional.of(seller));
+            given(userService.getUser(100L)).willReturn(seller);
             given(categoryRepository.findById(99L)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> productService.register(100L, request))

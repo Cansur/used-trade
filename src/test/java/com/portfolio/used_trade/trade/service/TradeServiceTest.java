@@ -5,13 +5,13 @@ import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.product.domain.Category;
 import com.portfolio.used_trade.product.domain.Product;
 import com.portfolio.used_trade.product.domain.ProductStatus;
-import com.portfolio.used_trade.product.repository.ProductRepository;
+import com.portfolio.used_trade.product.service.ProductService;
 import com.portfolio.used_trade.trade.domain.Trade;
 import com.portfolio.used_trade.trade.domain.TradeStatus;
 import com.portfolio.used_trade.trade.dto.TradeResponse;
 import com.portfolio.used_trade.trade.repository.TradeRepository;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -23,7 +23,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,8 +52,8 @@ import static org.mockito.Mockito.verify;
 @DisplayName("TradeService 단위 테스트")
 class TradeServiceTest {
 
-    @Mock private UserRepository userRepository;
-    @Mock private ProductRepository productRepository;
+    @Mock private UserService userService;
+    @Mock private ProductService productService;
     @Mock private TradeRepository tradeRepository;
 
     @InjectMocks private TradeService tradeService;
@@ -92,8 +91,8 @@ class TradeServiceTest {
         @DisplayName("정상: Trade 가 RESERVED 로 저장되고 Product 는 TRADING 으로 전이된다")
         void reserve_success() {
             Product product = makeProduct(ProductStatus.AVAILABLE);
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
-            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(userService.getUser(200L)).willReturn(buyer);
+            given(productService.getProduct(10L)).willReturn(product);
             // saveAndFlush 는 인자로 받은 trade 에 id 만 부여해 그대로 반환한다고 가정 (영속화 단순화).
             given(tradeRepository.saveAndFlush(any(Trade.class))).willAnswer(inv -> {
                 Trade t = inv.getArgument(0);
@@ -124,22 +123,22 @@ class TradeServiceTest {
         @Test
         @DisplayName("Buyer 가 DB 에 없으면 USER_NOT_FOUND — 존재 가드는 Product 조회보다 먼저")
         void reserve_buyerNotFound_throws() {
-            given(userRepository.findById(200L)).willReturn(Optional.empty());
+            given(userService.getUser(200L)).willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             assertThatThrownBy(() -> tradeService.reserve(200L, 10L))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.USER_NOT_FOUND);
 
-            verify(productRepository, never()).findById(any());
+            verify(productService, never()).getProduct(any());
             verify(tradeRepository, never()).saveAndFlush(any());
         }
 
         @Test
         @DisplayName("Product 가 DB 에 없으면 PRODUCT_NOT_FOUND")
         void reserve_productNotFound_throws() {
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
-            given(productRepository.findById(10L)).willReturn(Optional.empty());
+            given(userService.getUser(200L)).willReturn(buyer);
+            given(productService.getProduct(10L)).willThrow(new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
             assertThatThrownBy(() -> tradeService.reserve(200L, 10L))
                     .isInstanceOf(BusinessException.class)
@@ -153,8 +152,8 @@ class TradeServiceTest {
         @DisplayName("판매자 본인이 자기 상품을 예약하면 TRADE_SELF_NOT_ALLOWED — 도메인 가드 위임")
         void reserve_selfTrade_throws() {
             Product product = makeProduct(ProductStatus.AVAILABLE);
-            given(userRepository.findById(100L)).willReturn(Optional.of(seller));
-            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(userService.getUser(100L)).willReturn(seller);
+            given(productService.getProduct(10L)).willReturn(product);
 
             assertThatThrownBy(() -> tradeService.reserve(100L, 10L))
                     .isInstanceOf(BusinessException.class)
@@ -168,8 +167,8 @@ class TradeServiceTest {
         @DisplayName("이미 TRADING 인 상품은 PRODUCT_NOT_AVAILABLE — Product.reserve() 가드가 그대로 노출")
         void reserve_productAlreadyTrading_throws() {
             Product product = makeProduct(ProductStatus.TRADING);
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
-            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(userService.getUser(200L)).willReturn(buyer);
+            given(productService.getProduct(10L)).willReturn(product);
 
             assertThatThrownBy(() -> tradeService.reserve(200L, 10L))
                     .isInstanceOf(BusinessException.class)

@@ -46,7 +46,7 @@
 
 ### Guide — 어떻게 작동하나
 - [project-structure.md](docs/guides/project-structure.md) — 패키지 경계, 의존 규칙, DTO 패턴
-- [testing-strategy.md](docs/guides/testing-strategy.md) — 138 테스트 분류, 도구 결정
+- [testing-strategy.md](docs/guides/testing-strategy.md) — 145 테스트 분류, 도구 결정
 - [docker.md](docs/guides/docker.md) — compose / Dockerfile 결정, ECR 워크플로우
 
 ### 배포
@@ -63,7 +63,7 @@
 | 멀티 인스턴스 채팅 (ADR-3) | 두 JVM 간 Redis Pub/Sub 릴레이 — `ChatStompDualInstanceTest` 통과 |
 | Saga 보상 (ADR-5) | PG 실패 → `trade.cancel` + Product 복원 — `TradeSagaCompensationIT` 통과 |
 | AWS 실배포 | EC2 2대 (cross-AZ) + ALB + RDS + ElastiCache |
-| 테스트 | 단위 + 통합 138 / 0 실패 |
+| 테스트 | 단위 + 통합 145 / 0 실패 |
 
 > Saga 는 **부분 구현** — T1 결제 실패만 자동 보상, T2/크래시/보상-실패는 운영자 수동 (ADR-5 에 명시). 과장 금지.
 
@@ -91,7 +91,7 @@
 
 - **커밋**: Conventional Commits — `feat(user):`, `fix:`, `docs:`, `test:`, `build:`
 - **브랜치**: GitHub Flow — `main` + `feature/<scope>`. PR 로 머지.
-- **의존 방향**: 도메인 → common 만, common → 도메인 ❌. 도메인 간엔 ID(값) 만 참조.
+- **의존 방향**: 도메인 → common 만, common → 도메인 ❌. 도메인 간엔 다른 도메인 Repository 직접 주입 ❌ — 소유 Service 경유 (`getUser`, `getProduct`). 기존 엔티티 연관은 유지, 신규 도메인은 ID(값) 만 ([ADR-1](docs/adr/001-modular-monolith.md) 에러 상황 3·4).
 - **Entity**: setter 미노출, 정적 팩토리 + 의도 메서드. `@Version` (trade/product).
 - **DTO**: `record` + Bean Validation. 변환은 `from(Entity)` 정적 팩토리.
 - **JPA**: `@Enumerated(EnumType.STRING)`, `open-in-view: false`.
@@ -128,7 +128,7 @@ docker compose up -d                           # MySQL :3307 + Redis :6379
 curl http://localhost:8080/api/hello/health-db # {mysql:UP, redis:UP}
 
 # 테스트
-./gradlew test                                 # 단위 + 통합 (138)
+./gradlew test                                 # 단위 + 통합 (145)
 ./gradlew benchmark                            # ADR-4 커서 페이징 벤치
 
 # Git

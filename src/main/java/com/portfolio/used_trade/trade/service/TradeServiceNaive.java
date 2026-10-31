@@ -4,7 +4,7 @@ import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.trade.domain.TradeStatus;
 import com.portfolio.used_trade.trade.dto.TradeResponse;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -44,7 +44,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TradeServiceNaive {
 
-    private final UserRepository userRepository;
+    private final UserService userService;
     private final JdbcTemplate jdbcTemplate;
 
     /**
@@ -60,9 +60,7 @@ public class TradeServiceNaive {
      */
     @Transactional
     public TradeResponse reserveNaive(Long buyerId, Long productId) {
-        if (!userRepository.existsById(buyerId)) {
-            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
-        }
+        userService.verifyExists(buyerId);
 
         Map<String, Object> product;
         try {

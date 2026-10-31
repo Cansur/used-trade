@@ -12,9 +12,9 @@ import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.product.domain.Category;
 import com.portfolio.used_trade.product.domain.Product;
-import com.portfolio.used_trade.product.repository.ProductRepository;
+import com.portfolio.used_trade.product.service.ProductService;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -43,8 +43,8 @@ class ChatServiceTest {
 
     @Mock private ChatRoomRepository chatRoomRepository;
     @Mock private MessageRepository messageRepository;
-    @Mock private UserRepository userRepository;
-    @Mock private ProductRepository productRepository;
+    @Mock private UserService userService;
+    @Mock private ProductService productService;
 
     @InjectMocks private ChatService chatService;
 
@@ -85,8 +85,8 @@ class ChatServiceTest {
         @Test
         @DisplayName("기존 방이 없으면 새로 만들어 저장한다")
         void createsNewRoomIfAbsent() {
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
-            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(userService.getUser(200L)).willReturn(buyer);
+            given(productService.getProduct(10L)).willReturn(product);
             given(chatRoomRepository.findByProductIdAndBuyerId(10L, 200L)).willReturn(Optional.empty());
             given(chatRoomRepository.save(any(ChatRoom.class))).willAnswer(inv -> {
                 ChatRoom r = inv.getArgument(0);
@@ -110,8 +110,8 @@ class ChatServiceTest {
         @DisplayName("기존 방이 있으면 새로 만들지 않고 그대로 반환 — 중복 방 방지")
         void reusesExistingRoom() {
             ChatRoom existing = makeRoom(7L);
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
-            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(userService.getUser(200L)).willReturn(buyer);
+            given(productService.getProduct(10L)).willReturn(product);
             given(chatRoomRepository.findByProductIdAndBuyerId(10L, 200L)).willReturn(Optional.of(existing));
 
             ChatRoomResponse response = chatService.createOrGetRoom(200L, 10L);
@@ -123,21 +123,21 @@ class ChatServiceTest {
         @Test
         @DisplayName("buyer 가 DB 에 없으면 USER_NOT_FOUND")
         void buyerMissing_throws() {
-            given(userRepository.findById(200L)).willReturn(Optional.empty());
+            given(userService.getUser(200L)).willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             assertThatThrownBy(() -> chatService.createOrGetRoom(200L, 10L))
                     .isInstanceOf(BusinessException.class)
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.USER_NOT_FOUND);
 
-            verify(productRepository, never()).findById(any());
+            verify(productService, never()).getProduct(any());
         }
 
         @Test
         @DisplayName("product 가 DB 에 없으면 PRODUCT_NOT_FOUND")
         void productMissing_throws() {
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
-            given(productRepository.findById(10L)).willReturn(Optional.empty());
+            given(userService.getUser(200L)).willReturn(buyer);
+            given(productService.getProduct(10L)).willThrow(new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
 
             assertThatThrownBy(() -> chatService.createOrGetRoom(200L, 10L))
                     .isInstanceOf(BusinessException.class)
@@ -148,8 +148,8 @@ class ChatServiceTest {
         @Test
         @DisplayName("seller 가 본인 상품에 채팅 시도 → CHAT_SELF_NOT_ALLOWED — 도메인 가드 위임")
         void selfChat_throws() {
-            given(userRepository.findById(100L)).willReturn(Optional.of(seller));
-            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(userService.getUser(100L)).willReturn(seller);
+            given(productService.getProduct(10L)).willReturn(product);
             given(chatRoomRepository.findByProductIdAndBuyerId(10L, 100L)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> chatService.createOrGetRoom(100L, 10L))
@@ -169,7 +169,7 @@ class ChatServiceTest {
         @DisplayName("buyer 가 자기 방에 발화 → 메시지 저장되고 응답 반환")
         void byBuyer_success() {
             ChatRoom room = makeRoom(1L);
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
+            given(userService.getUser(200L)).willReturn(buyer);
             given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
             given(messageRepository.save(any(Message.class))).willAnswer(inv -> {
                 Message m = inv.getArgument(0);
@@ -190,7 +190,7 @@ class ChatServiceTest {
         @DisplayName("비참여자 발화는 NOT_CHAT_PARTICIPANT — 도메인 가드 위임")
         void byStranger_throws() {
             ChatRoom room = makeRoom(1L);
-            given(userRepository.findById(999L)).willReturn(Optional.of(stranger));
+            given(userService.getUser(999L)).willReturn(stranger);
             given(chatRoomRepository.findById(1L)).willReturn(Optional.of(room));
 
             assertThatThrownBy(() -> chatService.sendMessage(999L, 1L, "끼어들기"))
@@ -204,7 +204,7 @@ class ChatServiceTest {
         @Test
         @DisplayName("방이 없으면 CHAT_ROOM_NOT_FOUND")
         void roomMissing_throws() {
-            given(userRepository.findById(200L)).willReturn(Optional.of(buyer));
+            given(userService.getUser(200L)).willReturn(buyer);
             given(chatRoomRepository.findById(1L)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> chatService.sendMessage(200L, 1L, "ping"))
