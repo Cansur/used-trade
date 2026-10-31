@@ -95,22 +95,19 @@ public class Trade extends BaseEntity {
     /**
      * 거래 예약 정적 팩토리.
      *
-     * <p>다음 일이 한 번에 일어난다:
+     * <p>다음 일이 일어난다:
      * <ol>
      *   <li>본인 상품 예약 차단 — {@link ErrorCode#TRADE_SELF_NOT_ALLOWED}</li>
-     *   <li>{@link Product#reserve()} — AVAILABLE → TRADING. 이미 TRADING/SOLD 면
-     *       {@link ErrorCode#PRODUCT_NOT_AVAILABLE}</li>
      *   <li>Trade 인스턴스 생성 — 상태 RESERVED, 가격은 거래 시점 Product.price 스냅샷</li>
      * </ol>
      *
-     * <p>JPA 가 saveAndFlush 시 Product 의 {@code @Version} 충돌을
-     * OptimisticLockException 으로 던지면, 호출자(서비스)가 Spring Retry 로 재시도한다.
+     * <p>Product 의 상태 (AVAILABLE → TRADING) 는 여기서 바꾸지 않는다 — product 도메인 책임.
+     * 호출자 (TradeService) 가 같은 트랜잭션에서 {@code ProductService.reserve} 를 호출한다 (ADR-1 에러 상황 3).
      */
     public static Trade reserve(Product product, User buyer) {
         if (product.isOwnedBy(buyer.getId())) {
             throw new BusinessException(ErrorCode.TRADE_SELF_NOT_ALLOWED);
         }
-        product.reserve();   // AVAILABLE → TRADING (가드 + @Version 충돌 지점)
 
         Trade trade = new Trade();
         trade.product = product;
@@ -131,26 +128,27 @@ public class Trade extends BaseEntity {
     }
 
     /**
-     * CONFIRMED → SETTLED. Product 도 {@link Product#markSold()} 로 종착.
+     * CONFIRMED → SETTLED.
+     *
+     * <p>Product 의 SOLD 전이는 호출자가 같은 트랜잭션에서 {@code ProductService.markSold} 로 처리 (TRADE-1).
      */
     public void settle() {
         if (this.status != TradeStatus.CONFIRMED) {
             throw new BusinessException(ErrorCode.INVALID_TRADE_TRANSITION);
         }
-        this.product.markSold();
         this.status = TradeStatus.SETTLED;
     }
 
     /**
-     * RESERVED → CANCELED. Product 는 AVAILABLE 로 복귀.
+     * RESERVED → CANCELED.
      *
-     * <p>이번 PR 범위는 RESERVED 단계 취소만 — CONFIRMED 취소는 환불 로직과 함께 다음 PR.
+     * <p>Product 의 AVAILABLE 복귀는 호출자가 같은 트랜잭션에서 {@code ProductService.cancelReservation} 으로 처리.
+     * 이번 PR 범위는 RESERVED 단계 취소만 — CONFIRMED 취소는 환불 로직과 함께 다음 PR.
      */
     public void cancel() {
         if (this.status != TradeStatus.RESERVED) {
             throw new BusinessException(ErrorCode.INVALID_TRADE_TRANSITION);
         }
-        this.product.cancelReservation();
         this.status = TradeStatus.CANCELED;
     }
 

@@ -97,8 +97,12 @@ MSA 선택 X
 - 소유 도메인에 조회 메서드 추가 : `UserService.getUser(id)`, `UserService.verifyExists(id)`, `ProductService.getProduct(id)` — NOT_FOUND 처리도 소유 도메인이 책임
 - `@Version` 충돌 검출은 그대로 — `getProduct` 가 호출자의 쓰기 트랜잭션에 참여해 같은 영속성 컨텍스트의 엔티티를 돌려주기 때문. 동시성 테스트 (N=50, ADR-2) 통과로 확인
 - `TradeServiceNaive` 의 products 직접 SQL 은 유지 — ADR-2 Before 측정용으로 일부러 가드를 우회하는 비교 코드
-- 테스트 : 138 → 141 (조회 메서드 테스트 3개 추가), 실패 0
-- 재발 방지 : `ArchitectureTest` (ArchUnit) 로 이 규칙을 테스트에 강제
+- **상태 변경도 소유 도메인으로** — 처음엔 조회만 고쳤고, `Trade` 엔티티가 여전히 `product.reserve()` / `markSold()` / `cancelReservation()` 을 직접 호출하고 있었음 (trade 가 상품 상태를 바꿈). `ProductService.reserve` / `markSold` / `cancelReservation` 으로 옮기고 `TradeService` 가 같은 트랜잭션에서 호출
+  - 막혔던 이유는 "Service 는 DTO 만 돌려준다" 는 잘못된 전제. 기본 전파 (REQUIRED) 로 같은 트랜잭션에 합류하면 상태를 trade 에서 바꾸든 product 에서 바꾸든 `saveAndFlush` 시점에 함께 flush 되어 `@Version` 검사도 같다
+  - `TradeService.reserve` 순서 : 본인 상품 차단 (`Trade.reserve`) → `productService.reserve` → `saveAndFlush`. 본인 상품이면 상품 상태를 건드리기 전에 끝남
+  - 검증 : 동시성 (N=20), 부하 (N=50), Naive, Saga 보상 IT 통과
+- 테스트 : 138 → 151 (조회 3 + 상태 전이 5 + 취소 위임 2 + ArchUnit 4 − 도메인 테스트 이동 1), 실패 0
+- 재발 방지 : `ArchitectureTest` (ArchUnit) 로 Repository 규칙을 테스트에 강제. 엔티티 연관이 허용된 기존 도메인의 "다른 도메인 엔티티 상태 변경" 은 ArchUnit 으로 잡기 어려워 코드 리뷰 대상
 
 ### 4. 문서와 코드의 불일치 — 엔티티 연관
 

@@ -81,9 +81,10 @@ class TradeSagaCompensationIT {
         product = productRepository.save(
                 Product.create(seller, category, "saga-target-" + unique, "Saga 보상 시연", 100_000L));
 
-        // Trade.reserve() 가 product.reserve() (메모리 TRADING) 도 호출하므로
-        // product 도 같은 시점에 다시 save 해서 DB 에 TRADING 반영해야 보상 단계가 정합.
+        // 예약 상태 재현 — 서비스에선 TradeService.reserve 가 Trade.reserve + ProductService.reserve 를 함께 처리.
+        // product 를 TRADING 으로 DB 에 반영해야 보상 단계 (cancelReservation) 가 정합.
         trade = Trade.reserve(product, buyer);
+        product.reserve();
         productRepository.save(product);   // status=TRADING DB 반영
         trade = tradeRepository.save(trade);
     }

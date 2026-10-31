@@ -46,7 +46,7 @@
 
 ### Guide — 어떻게 작동하나
 - [project-structure.md](docs/guides/project-structure.md) — 패키지 경계, 의존 규칙, DTO 패턴
-- [testing-strategy.md](docs/guides/testing-strategy.md) — 145 테스트 분류, 도구 결정
+- [testing-strategy.md](docs/guides/testing-strategy.md) — 151 테스트 분류, 도구 결정
 - [docker.md](docs/guides/docker.md) — compose / Dockerfile 결정, ECR 워크플로우
 
 ### 배포
@@ -63,7 +63,7 @@
 | 멀티 인스턴스 채팅 (ADR-3) | 두 JVM 간 Redis Pub/Sub 릴레이 — `ChatStompDualInstanceTest` 통과 |
 | Saga 보상 (ADR-5) | PG 실패 → `trade.cancel` + Product 복원 — `TradeSagaCompensationIT` 통과 |
 | AWS 실배포 | EC2 2대 (cross-AZ) + ALB + RDS + ElastiCache |
-| 테스트 | 단위 + 통합 145 / 0 실패 |
+| 테스트 | 단위 + 통합 151 / 0 실패 |
 
 > Saga 는 **부분 구현** — T1 결제 실패만 자동 보상, T2/크래시/보상-실패는 운영자 수동 (ADR-5 에 명시). 과장 금지.
 
@@ -128,7 +128,7 @@ docker compose up -d                           # MySQL :3307 + Redis :6379
 curl http://localhost:8080/api/hello/health-db # {mysql:UP, redis:UP}
 
 # 테스트
-./gradlew test                                 # 단위 + 통합 (145)
+./gradlew test                                 # 단위 + 통합 (151)
 ./gradlew benchmark                            # ADR-4 커서 페이징 벤치
 
 # Git

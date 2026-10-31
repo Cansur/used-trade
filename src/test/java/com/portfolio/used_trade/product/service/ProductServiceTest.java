@@ -377,4 +377,64 @@ class ProductServiceTest {
             verify(productRepository, never()).delete(any());
         }
     }
+
+    @Nested
+    @DisplayName("거래 연동 상태 전이 — reserve / markSold / cancelReservation")
+    class TradeTransitions {
+
+        @Test
+        @DisplayName("reserve — AVAILABLE 상품이 TRADING 으로 전이")
+        void reserve_available_toTrading() {
+            Product product = makeProduct(ProductStatus.AVAILABLE);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            productService.reserve(10L);
+
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.TRADING);
+        }
+
+        @Test
+        @DisplayName("reserve — 이미 TRADING 이면 PRODUCT_NOT_AVAILABLE")
+        void reserve_trading_throws() {
+            given(productRepository.findById(10L)).willReturn(Optional.of(makeProduct(ProductStatus.TRADING)));
+
+            assertThatThrownBy(() -> productService.reserve(10L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("reserve — 없는 상품이면 PRODUCT_NOT_FOUND")
+        void reserve_missing_throws() {
+            given(productRepository.findById(404L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> productService.reserve(404L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("cancelReservation — TRADING 상품이 AVAILABLE 로 복귀")
+        void cancelReservation_trading_toAvailable() {
+            Product product = makeProduct(ProductStatus.TRADING);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            productService.cancelReservation(10L);
+
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("markSold — TRADING 상품이 SOLD 로 전이")
+        void markSold_trading_toSold() {
+            Product product = makeProduct(ProductStatus.TRADING);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            productService.markSold(10L);
+
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD);
+        }
+    }
 }

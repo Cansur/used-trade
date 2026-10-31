@@ -24,10 +24,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -88,7 +91,7 @@ class TradeServiceTest {
     class Reserve {
 
         @Test
-        @DisplayName("정상: Trade 가 RESERVED 로 저장되고 Product 는 TRADING 으로 전이된다")
+        @DisplayName("정상: Trade 가 RESERVED 로 저장되고 상품 전이는 ProductService.reserve 에 위임된다")
         void reserve_success() {
             Product product = makeProduct(ProductStatus.AVAILABLE);
             given(userService.getUser(200L)).willReturn(buyer);
@@ -110,7 +113,7 @@ class TradeServiceTest {
             assertThat(saved.getPricePaid()).isEqualTo(1_200_000L);
             assertThat(saved.getProduct()).isSameAs(product);
             assertThat(saved.getBuyer()).isSameAs(buyer);
-            assertThat(product.getStatus()).isEqualTo(ProductStatus.TRADING);   // 도메인 전이 반영
+            verify(productService).reserve(10L);   // 상품 상태 전이는 product 도메인이
 
             assertThat(response.id()).isEqualTo(1000L);
             assertThat(response.productId()).isEqualTo(10L);
@@ -160,15 +163,17 @@ class TradeServiceTest {
                     .extracting(e -> ((BusinessException) e).getErrorCode())
                     .isEqualTo(ErrorCode.TRADE_SELF_NOT_ALLOWED);
 
+            verify(productService, never()).reserve(any());   // 본인 상품이면 상품 상태를 건드리기 전에 차단
             verify(tradeRepository, never()).saveAndFlush(any());
         }
 
         @Test
-        @DisplayName("이미 TRADING 인 상품은 PRODUCT_NOT_AVAILABLE — Product.reserve() 가드가 그대로 노출")
+        @DisplayName("이미 TRADING 인 상품은 PRODUCT_NOT_AVAILABLE — ProductService.reserve 의 가드가 그대로 노출")
         void reserve_productAlreadyTrading_throws() {
             Product product = makeProduct(ProductStatus.TRADING);
             given(userService.getUser(200L)).willReturn(buyer);
             given(productService.getProduct(10L)).willReturn(product);
+            willThrow(new BusinessException(ErrorCode.PRODUCT_NOT_AVAILABLE)).given(productService).reserve(10L);
 
             assertThatThrownBy(() -> tradeService.reserve(200L, 10L))
                     .isInstanceOf(BusinessException.class)
@@ -176,6 +181,39 @@ class TradeServiceTest {
                     .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
 
             verify(tradeRepository, never()).saveAndFlush(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("cancel()")
+    class Cancel {
+
+        @Test
+        @DisplayName("거래는 CANCELED, 상품 복원은 ProductService.cancelReservation 에 위임된다 (Saga 보상 경로)")
+        void cancel_delegatesProductRestoreToProductService() {
+            Product product = makeProduct(ProductStatus.TRADING);
+            Trade trade = Trade.reserve(product, buyer);
+            ReflectionTestUtils.setField(trade, "id", 1000L);
+            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+
+            TradeResponse response = tradeService.cancel(200L, 1000L);
+
+            assertThat(response.status()).isEqualTo(TradeStatus.CANCELED);
+            verify(productService).cancelReservation(10L);
+        }
+
+        @Test
+        @DisplayName("구매자가 아니면 NOT_PRODUCT_OWNER — 상품은 건드리지 않음")
+        void cancel_notBuyer_throwsWithoutTouchingProduct() {
+            Trade trade = Trade.reserve(makeProduct(ProductStatus.TRADING), buyer);
+            ReflectionTestUtils.setField(trade, "id", 1000L);
+            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+
+            assertThatThrownBy(() -> tradeService.cancel(999L, 1000L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.NOT_PRODUCT_OWNER);
+            verify(productService, never()).cancelReservation(any());
         }
     }
 }

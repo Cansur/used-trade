@@ -84,11 +84,11 @@ public class TradeService {
         User buyer = userService.getUser(buyerId);
         Product product = productService.getProduct(productId);
 
-        // Trade.reserve() 정적 팩토리가 다음을 한 번에 처리:
-        //   - 본인 상품 차단 (TRADE_SELF_NOT_ALLOWED)
-        //   - Product.reserve() 호출 (PRODUCT_NOT_AVAILABLE 가드)
-        //   - 가격 스냅샷 + RESERVED 로 생성
+        // 1. 본인 상품 차단 + 가격 스냅샷 + RESERVED 생성 — 본인 상품이면 상품 상태를 건드리기 전에 끝난다
         Trade trade = Trade.reserve(product, buyer);
+        // 2. 상품 상태 전이는 product 도메인이 — AVAILABLE → TRADING (PRODUCT_NOT_AVAILABLE 가드)
+        //    같은 트랜잭션에 합류하므로 @Version 충돌은 아래 saveAndFlush 에서 함께 터진다
+        productService.reserve(productId);
 
         // saveAndFlush 로 즉시 flush — Product 의 @Version 충돌이 이 메서드 안에서 터지도록 강제.
         // 충돌 시 OptimisticLockingFailureException → @Retryable 이 캡처해 재시도.
@@ -157,12 +157,14 @@ public class TradeService {
     /**
      * 거래 취소 — Saga 보상 단계. RESERVED → CANCELED + Product 복원.
      *
-     * <p>도메인 메서드가 product.cancelReservation() 호출.
+     * <p>거래 상태는 {@link Trade#cancel()}, 상품 복원은 product 도메인 ({@code ProductService.cancelReservation}) 이
+     * 같은 트랜잭션에서 처리 — 둘 중 하나가 실패하면 함께 롤백.
      */
     @Transactional
     public TradeResponse cancel(Long buyerId, Long tradeId) {
         Trade trade = loadOwnedByBuyer(tradeId, buyerId);
         trade.cancel();
+        productService.cancelReservation(trade.getProduct().getId());
         return TradeResponse.from(trade);
     }
 

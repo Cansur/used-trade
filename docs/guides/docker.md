@@ -238,7 +238,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=5 \
 ### 1. 로컬 빌드 + 테스트
 
 ```bash
-./gradlew test                          # 145 tests pass 확인
+./gradlew test                          # 151 tests pass 확인
 ./gradlew bootJar -x test               # bootJar 생성 (build/libs/*.jar)
 docker build -t usedtrade-app:local .   # 이미지 빌드
 docker run --rm -p 8080:8080 \

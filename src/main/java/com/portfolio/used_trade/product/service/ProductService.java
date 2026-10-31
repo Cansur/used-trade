@@ -96,6 +96,44 @@ public class ProductService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
     }
 
+    // ---------- 거래 연동 상태 전이 (trade 도메인이 호출) ----------
+    //
+    // AI-NOTE: 이 세 메서드는 반드시 호출자(TradeService)의 쓰기 트랜잭션 안에서 불려야 한다.
+    // 같은 트랜잭션에 합류해야 Product 의 @Version 검사가 Trade 저장(saveAndFlush)과 함께
+    // flush 되어, 동시 예약 충돌이 OptimisticLockingFailureException → Spring Retry 로 이어진다 (ADR-2).
+    // propagation 을 REQUIRES_NEW 로 바꾸면 상품만 먼저 커밋되어 거래 저장 실패 시 상품이 TRADING 에 남는다.
+
+    /**
+     * 예약 — AVAILABLE → TRADING.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} 이미 예약/판매완료
+     */
+    @Transactional
+    public void reserve(Long productId) {
+        getProduct(productId).reserve();
+    }
+
+    /**
+     * 판매 완료 — TRADING → SOLD. 거래 마무리 API (TRADE-1) 에서 호출 예정.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} TRADING 이 아님
+     */
+    @Transactional
+    public void markSold(Long productId) {
+        getProduct(productId).markSold();
+    }
+
+    /**
+     * 예약 취소 — TRADING → AVAILABLE. 거래 취소와 Saga 보상 경로에서 호출.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} TRADING 이 아님
+     */
+    @Transactional
+    public void cancelReservation(Long productId) {
+        getProduct(productId).cancelReservation();
+    }
+
     /**
      * AVAILABLE 상품의 커서 기반 페이징 조회. 인증 불필요 (홈 화면 / 카테고리 진입 등).
      *
