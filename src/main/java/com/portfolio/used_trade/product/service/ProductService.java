@@ -16,6 +16,7 @@ import com.portfolio.used_trade.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -98,10 +99,10 @@ public class ProductService {
 
     // ---------- 거래 연동 상태 전이 (trade 도메인이 호출) ----------
     //
-    // AI-NOTE: 이 세 메서드는 반드시 호출자(TradeService)의 쓰기 트랜잭션 안에서 불려야 한다.
-    // 같은 트랜잭션에 합류해야 Product 의 @Version 검사가 Trade 저장(saveAndFlush)과 함께
-    // flush 되어, 동시 예약 충돌이 OptimisticLockingFailureException → Spring Retry 로 이어진다 (ADR-2).
-    // propagation 을 REQUIRES_NEW 로 바꾸면 상품만 먼저 커밋되어 거래 저장 실패 시 상품이 TRADING 에 남는다.
+    // AI-NOTE: 이 세 메서드는 호출자(TradeService)의 쓰기 트랜잭션 안에서만 불려야 해서 MANDATORY 로 강제한다.
+    // 같은 트랜잭션이어야 상품 상태 변경과 거래 저장이 함께 커밋/롤백되고, @Version 충돌도 Spring Retry 로 이어진다 (ADR-2).
+    // 트랜잭션 없이 부르면 IllegalTransactionStateException. REQUIRES_NEW 로 바꾸면 상품만 먼저 커밋되어
+    // 거래 저장 실패 시 상품이 TRADING 에 남는다.
 
     /**
      * 예약 — AVAILABLE → TRADING.
@@ -109,7 +110,7 @@ public class ProductService {
      * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
      * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} 이미 예약/판매완료
      */
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void reserve(Long productId) {
         getProduct(productId).reserve();
     }
@@ -119,7 +120,7 @@ public class ProductService {
      *
      * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} TRADING 이 아님
      */
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void markSold(Long productId) {
         getProduct(productId).markSold();
     }
@@ -129,7 +130,7 @@ public class ProductService {
      *
      * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} TRADING 이 아님
      */
-    @Transactional
+    @Transactional(propagation = Propagation.MANDATORY)
     public void cancelReservation(Long productId) {
         getProduct(productId).cancelReservation();
     }

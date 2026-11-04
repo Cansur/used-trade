@@ -427,6 +427,32 @@ class ProductServiceTest {
         }
 
         @Test
+        @DisplayName("cancelReservation — TRADING 이 아니면 PRODUCT_NOT_AVAILABLE, 상태 유지")
+        void cancelReservation_available_throws() {
+            Product product = makeProduct(ProductStatus.AVAILABLE);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            assertThatThrownBy(() -> productService.cancelReservation(10L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("markSold — TRADING 이 아니면 PRODUCT_NOT_AVAILABLE, 상태 유지")
+        void markSold_available_throws() {
+            Product product = makeProduct(ProductStatus.AVAILABLE);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            assertThatThrownBy(() -> productService.markSold(10L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+        }
+
+        @Test
         @DisplayName("markSold — TRADING 상품이 SOLD 로 전이")
         void markSold_trading_toSold() {
             Product product = makeProduct(ProductStatus.TRADING);

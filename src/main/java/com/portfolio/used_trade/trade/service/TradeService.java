@@ -31,11 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
  * </ul>
  *
  * <p><b>왜 {@code @Retryable + saveAndFlush} 인가?</b><br>
- * Product 의 {@code @Version} 으로 동시 예약 충돌은 검출되지만, 보통의 {@code save()} 는
- * 트랜잭션 커밋 시점에야 flush 한다. 그러면 {@link OptimisticLockingFailureException}
- * 이 메서드 <i>밖</i>에서 발생하고 {@code @Retryable} 이 잡지 못한다.
- * {@code saveAndFlush} 로 메서드 내부에서 즉시 flush → 충돌이 메서드 안에서 터짐 →
- * Spring Retry 가 재시도 가능. 이게 ADR-2 시연의 핵심.
+ * Product 의 {@code @Version} 으로 동시 예약 충돌을 검출하고 {@code @Retryable} 이 재시도한다.
+ * Retry advice 가 트랜잭션 advice 바깥에 있어 ({@code @EnableRetry} 기본 order) 커밋 시점 충돌도 재시도된다 —
+ * {@code save()} 로 바꿔도 재시도는 동작함을 실측했다 (ADR-2 에러 상황 3).
+ * {@code saveAndFlush} 는 재시도의 필수 조건이 아니라, 충돌을 커밋 전에 메서드 안에서 일찍 드러내는 선택이다.
  *
  * <p><b>재시도 정책</b>
  * <ul>
@@ -87,11 +86,11 @@ public class TradeService {
         // 1. 본인 상품 차단 + 가격 스냅샷 + RESERVED 생성 — 본인 상품이면 상품 상태를 건드리기 전에 끝난다
         Trade trade = Trade.reserve(product, buyer);
         // 2. 상품 상태 전이는 product 도메인이 — AVAILABLE → TRADING (PRODUCT_NOT_AVAILABLE 가드)
-        //    같은 트랜잭션에 합류하므로 @Version 충돌은 아래 saveAndFlush 에서 함께 터진다
+        //    같은 트랜잭션에 합류하므로 상품 변경과 거래 저장이 함께 커밋/롤백된다
         productService.reserve(productId);
 
-        // saveAndFlush 로 즉시 flush — Product 의 @Version 충돌이 이 메서드 안에서 터지도록 강제.
-        // 충돌 시 OptimisticLockingFailureException → @Retryable 이 캡처해 재시도.
+        // 즉시 flush — Product 의 @Version 충돌이 커밋 전에 이 메서드 안에서 드러난다.
+        // 충돌 시 OptimisticLockingFailureException → @Retryable 이 재시도.
         Trade saved = tradeRepository.saveAndFlush(trade);
         return TradeResponse.from(saved);
     }

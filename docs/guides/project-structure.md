@@ -246,7 +246,7 @@ public record TradeResponse(
 원칙:
 - **`record` — Java 16+ 의 immutable 데이터** — getter / equals / hashCode / toString 자동
 - **`from(Entity)` 정적 팩토리** — 매핑 책임을 DTO 가 가짐 (Service 에서 매핑 코드 없음)
-- **변환은 단방향** — DTO → Entity 변환은 도메인 정적 팩토리 (예: `Trade.reserve(buyer, product)`) 가 책임
+- **변환은 단방향** — DTO → Entity 변환은 도메인 정적 팩토리 (예: `Trade.reserve(product, buyer)`) 가 책임
 - **Bean Validation** 어노테이션은 Request DTO 에만 (Response 에는 의미 없음)
 
 ---

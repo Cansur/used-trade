@@ -113,7 +113,7 @@ class TradeSagaCompensationIT {
         Trade reloadedTrade = tradeRepository.findById(trade.getId()).orElseThrow();
         assertThat(reloadedTrade.getStatus()).isEqualTo(TradeStatus.CANCELED);
 
-        // 2) Product 는 AVAILABLE 로 복원 (cancel 도메인 메서드가 product.cancelReservation 호출)
+        // 2) Product 는 AVAILABLE 로 복원 (TradeService.cancel 이 ProductService.cancelReservation 호출)
         Product reloadedProduct = productRepository.findById(product.getId()).orElseThrow();
         assertThat(reloadedProduct.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
 

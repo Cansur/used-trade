@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -113,7 +115,10 @@ class TradeServiceTest {
             assertThat(saved.getPricePaid()).isEqualTo(1_200_000L);
             assertThat(saved.getProduct()).isSameAs(product);
             assertThat(saved.getBuyer()).isSameAs(buyer);
-            verify(productService).reserve(10L);   // 상품 상태 전이는 product 도메인이
+            // 상품 상태 전이는 product 도메인이, 거래 저장(flush) 전에 — 그래야 같은 flush 에 함께 나간다
+            InOrder order = inOrder(productService, tradeRepository);
+            order.verify(productService).reserve(10L);
+            order.verify(tradeRepository).saveAndFlush(saved);
 
             assertThat(response.id()).isEqualTo(1000L);
             assertThat(response.productId()).isEqualTo(10L);

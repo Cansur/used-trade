@@ -1,6 +1,6 @@
 # 테스트 전략 가이드
 
-> 151 테스트의 분류 / 도구 / 의사결정. 면접 답변: "테스트 어떻게 짜셨어요?"
+> 155 테스트의 분류 / 도구 / 의사결정. 면접 답변: "테스트 어떻게 짜셨어요?"
 
 ---
 
@@ -8,11 +8,11 @@
 
 | 지표 | 값 |
 |---|---|
-| 총 테스트 메서드 | **151** (`./gradlew test` 기준) |
+| 총 테스트 메서드 | **155** (`./gradlew test` 기준) |
 | 실패 | **0** |
 | 무시 (ignored) | 0 |
 | 실행 시간 | 40초 |
-| 통합 테스트 (`@SpringBootTest`) | 7개 파일 |
+| 통합 테스트 (`@SpringBootTest`) | 9개 파일 (벤치마크 포함) |
 | 벤치마크 (`@Tag("benchmark")`) | 1개, 별도 task |
 
 도메인별 분포:
@@ -20,11 +20,12 @@
 | 도메인 | 메서드 수 |
 |---|---|
 | user | 41 |
-| product | 42 |
-| trade | 30 |
+| product | 43 |
+| trade | 32 |
 | chat | 23 |
 | payment | 11 |
 | architecture (ArchUnit) | 4 |
+| 컨텍스트 로드 (`UsedTradeApplicationTests`) | 1 |
 
 ---
 
@@ -50,7 +51,7 @@
 
 ## 분류 — 단위 vs 통합
 
-### 단위 테스트 (144개)
+### 단위 테스트 (145개)
 
 **도메인 단위** — 엔티티의 도메인 메서드 / 상태 전이 가드 / 정적 팩토리:
 
@@ -59,7 +60,7 @@
 @Test
 @DisplayName("RESERVED 상태에서 confirm() 호출 시 CONFIRMED 로 전이")
 void confirm_fromReserved_changesStatusToConfirmed() {
-    Trade trade = Trade.reserve(buyer, product);
+    Trade trade = Trade.reserve(product, buyer);
     trade.confirm();
     assertThat(trade.getStatus()).isEqualTo(TradeStatus.CONFIRMED);
 }
@@ -67,7 +68,7 @@ void confirm_fromReserved_changesStatusToConfirmed() {
 @Test
 @DisplayName("CONFIRMED 상태에서 cancel() 호출 시 INVALID_TRADE_TRANSITION")
 void cancel_fromConfirmed_throwsBusinessException() {
-    Trade trade = Trade.reserve(buyer, product);
+    Trade trade = Trade.reserve(product, buyer);
     trade.confirm();
     assertThatThrownBy(trade::cancel)
             .isInstanceOf(BusinessException.class)
@@ -95,7 +96,7 @@ class TradeServiceTest {
 }
 ```
 
-### 통합 테스트 (7개)
+### 통합 테스트 (9개 파일 — `./gradlew test` 기준 10개 메서드, 벤치마크는 별도)
 
 | 파일 | 종류 | 책임 |
 |---|---|---|
@@ -103,8 +104,10 @@ class TradeServiceTest {
 | `TradeReserveConcurrencyTest` | 같음 | **ADR-2 After (N=20)** — 1건 RESERVED, 중복 0 |
 | `TradeReserveLoadTest` | 같음 | **ADR-2 정량 (N=50)** — wall=246ms, p95=193ms |
 | `TradeSagaCompensationIT` | `@SpringBootTest` + `ControllablePaymentGateway` | **Saga 보상** — PG FAILED → Product 상태 원복 |
+| `TradeProductTransactionIT` | `@SpringBootTest` | **ADR-1** — 상태 전이 전파 강제 (MANDATORY), 거래 취소 롤백 원자성 |
 | `ChatStompSingleInstanceTest` | `@SpringBootTest(RANDOM_PORT)` + STOMP client | STOMP 핸드셰이크 / JWT CONNECT / SUBSCRIBE 가드 |
 | `ChatStompDualInstanceTest` | 같음 + `SpringApplicationBuilder` 두번째 JVM | **ADR-3 핵심** — cross-instance broadcast |
+| `UsedTradeApplicationTests` | `@SpringBootTest` | 컨텍스트 로드 확인 |
 | `CursorPagingBenchmarkTest` | `@SpringBootTest` + `@Tag("benchmark")` | **ADR-4 벤치** — OFFSET vs CURSOR p50 측정 + EXPLAIN |
 
 ---
@@ -192,7 +195,7 @@ JaCoCo 같은 line coverage 도구는 **안 적용**. 이유:
 
 - **Coverage % 목표** 는 안티패턴 — 의미 없는 getter 테스트로 숫자 끌어올리는 게 가능
 - 본 프로젝트는 **시나리오 커버리지 우선** — 각 ADR 의 Before/After + 도메인 메서드의 가드 / 분기 / 상태 전이가 다 테스트됨
-- 151 테스트 모두 의미 있는 시나리오 (의도된 결함 입증 / 보호 입증 / 분기 / 가드)
+- 155 테스트 모두 의미 있는 시나리오 (의도된 결함 입증 / 보호 입증 / 분기 / 가드)
 
 **언제 JaCoCo 도입할까**:
 - 팀 협업 시작 → 새 코드의 커버리지 강제
@@ -229,9 +232,10 @@ docker compose ps   # mysql / redis 모두 healthy
 
 ### Q. "테스트 어떻게 구성하셨어요?"
 
-**A**: "151 테스트 (단위 + 통합) 모두 통과. 도메인별로 단위 테스트 (Mockito) + 통합 테스트 (`@SpringBootTest`) 가르고, 통합은 7개로 ADR 의 가치 입증에 집중:
+**A**: "155 테스트 (단위 + 통합) 모두 통과. 도메인별로 단위 테스트 (Mockito) + 통합 테스트 (`@SpringBootTest`) 가르고, 통합은 9개 파일로 ADR 의 가치 입증에 집중:
 - ADR-2 동시성 — Naive (Before) / Concurrency (After) / Load (정량)
 - Saga 보상 — `TradeSagaCompensationIT`
+- 거래-상품 트랜잭션 — `TradeProductTransactionIT`
 - ADR-3 — STOMP 단일 / 다중 인스턴스 (`SpringApplicationBuilder` 로 두 JVM)
 - ADR-4 — 커서 페이징 벤치 (`@Tag("benchmark")` 로 별도 task)
 
@@ -243,7 +247,7 @@ docker compose ps   # mysql / redis 모두 healthy
 
 ### Q. "테스트 커버리지 % 는 얼마예요?"
 
-**A**: "JaCoCo 등 line coverage 도구 안 썼습니다. **Coverage % 가 안티패턴 가능성** 때문 — getter 테스트로 숫자 부풀리기 가능. 본 프로젝트는 **시나리오 커버리지** 우선 — 각 ADR 의 Before/After, 도메인 메서드의 가드 / 분기 / 상태 전이가 다 테스트됨. 151 테스트 모두 의미 있는 시나리오. 팀 협업 시작하면 새 코드 강제용으로 JaCoCo 도입 검토."
+**A**: "JaCoCo 등 line coverage 도구 안 썼습니다. **Coverage % 가 안티패턴 가능성** 때문 — getter 테스트로 숫자 부풀리기 가능. 본 프로젝트는 **시나리오 커버리지** 우선 — 각 ADR 의 Before/After, 도메인 메서드의 가드 / 분기 / 상태 전이가 다 테스트됨. 155 테스트 모두 의미 있는 시나리오. 팀 협업 시작하면 새 코드 강제용으로 JaCoCo 도입 검토."
 
 ### Q. "Saga 보상 어떻게 테스트했나요?"
 

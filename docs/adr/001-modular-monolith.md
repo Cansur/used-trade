@@ -101,7 +101,9 @@ MSA 선택 X
   - 막혔던 이유는 "Service 는 DTO 만 돌려준다" 는 잘못된 전제. 기본 전파 (REQUIRED) 로 같은 트랜잭션에 합류하면 상태를 trade 에서 바꾸든 product 에서 바꾸든 `saveAndFlush` 시점에 함께 flush 되어 `@Version` 검사도 같다
   - `TradeService.reserve` 순서 : 본인 상품 차단 (`Trade.reserve`) → `productService.reserve` → `saveAndFlush`. 본인 상품이면 상품 상태를 건드리기 전에 끝남
   - 검증 : 동시성 (N=20), 부하 (N=50), Naive, Saga 보상 IT 통과
-- 테스트 : 138 → 151 (조회 3 + 상태 전이 5 + 취소 위임 2 + ArchUnit 4 − 도메인 테스트 이동 1), 실패 0
+  - 비용 : "RESERVED 거래 = TRADING 상품" 을 예전엔 `Trade.reserve` 하나가 지켰지만, 이제는 `TradeService` 의 호출 순서가 지킴. 호출을 빠뜨리면 컴파일이 막아주지 않음 — 단위 테스트의 호출 순서 검증으로 보완
+  - 전파 강제 : 세 메서드에 `Propagation.MANDATORY` — 트랜잭션 밖 호출은 `IllegalTransactionStateException`. `TradeProductTransactionIT` 로 이것과 롤백 원자성을 검증
+- 테스트 : 138 → 155 (조회 3 + 상태 전이 7 + 취소 위임 2 + 트랜잭션 IT 2 + ArchUnit 4 − 도메인 테스트 이동 1), 실패 0
 - 재발 방지 : `ArchitectureTest` (ArchUnit) 로 Repository 규칙을 테스트에 강제. 엔티티 연관이 허용된 기존 도메인의 "다른 도메인 엔티티 상태 변경" 은 ArchUnit 으로 잡기 어려워 코드 리뷰 대상
 
 ### 4. 문서와 코드의 불일치 — 엔티티 연관

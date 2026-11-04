@@ -29,8 +29,8 @@ import lombok.NoArgsConstructor;
  * <ul>
  *   <li>setter 미노출 — 변경은 도메인 메서드 ({@link #confirm}, {@link #settle}, {@link #cancel})</li>
  *   <li>상태 전이는 가드된다 — 잘못된 상태에서 호출하면 {@link ErrorCode#INVALID_TRADE_TRANSITION}</li>
- *   <li>예약 시 {@link Product#reserve()} 를 함께 호출해 상품 상태 머신과 결합 —
- *       Product 의 {@code @Version} 충돌이 곧 거래 충돌</li>
+ *   <li>상품 상태는 바꾸지 않는다 — {@code TradeService} 가 같은 트랜잭션에서 {@code ProductService} 를 호출.
+ *       같은 flush 에 묶이므로 Product 의 {@code @Version} 충돌이 곧 거래 충돌</li>
  *   <li>{@code pricePaid} 는 거래 시점 가격 스냅샷 — Product.price 가 사후에 바뀌어도 거래 금액은 고정</li>
  * </ul>
  *

@@ -21,7 +21,7 @@
 거래 예약(`reserve`)의 동시성 제어로 낙관적 락 + Spring Retry.
 
 - `Product`에 `@Version` 으로 동일 row 동시 갱신 검출
-- `TradeService.reserve` 에 `@Retryable` + `saveAndFlush` 로 충돌을 메서드 내부에서 검출 후 재시도
+- `TradeService.reserve` 에 `@Retryable` 로 충돌 재시도, `saveAndFlush` 로 충돌을 커밋 전에 메서드 안에서 검출
 
 ## 비교
 
@@ -56,7 +56,7 @@ public class Product {
 ### 2. @Retryable + saveAndFlush
 ```java
 @Retryable(
-    retryFor = OptimisticLockingFailureException.class,
+    retryFor = {OptimisticLockingFailureException.class, CannotAcquireLockException.class},
     maxAttempts = 3,
     backoff = @Backoff(delay = 50, multiplier = 2)
 )
@@ -69,7 +69,7 @@ public TradeResponse reserve(Long buyerId, Long productId) {
 }
 ```
 
-- saveAndFlush - 충돌을 메서드 안에서 발생시켜 @Retryable이 잡게 함
+- saveAndFlush - 충돌을 커밋 전에 메서드 안에서 드러냄. 재시도의 필수 조건은 아님 (에러 상황 3)
 - 재시도 정책 - 최대 3회, 50ms × 2
 
 ### 측정 결과
@@ -98,6 +98,23 @@ public TradeResponse reserve(Long buyerId, Long productId) {
 문제 : 하지만 실제로는 `500 Internal_Server_Error`가 발생
 
 결론 : Spring Retry가 그대로 통과 시키도록 `@Recover`를 사용
+
+### 3. saveAndFlush 설명이 틀렸음
+
+상황 : "`save()` 는 커밋 때 flush 되어 충돌이 메서드 밖에서 터지므로 `@Retryable` 이 못 잡는다" 고 코드 주석과 이 문서에 적어 둠
+
+문제 : `@EnableRetry` 의 기본 order 가 `LOWEST_PRECEDENCE - 1` 이라 Retry 가 트랜잭션보다 바깥. 커밋 시점 예외도 Retry 안쪽에서 발생
+
+검증 : `save()` 로 바꿔 N=20, N=50 테스트를 3회씩 실행하고 `RetryListener` 로 예외 발생 위치 기록 (2026-11-04)
+
+| | `saveAndFlush` | `save` |
+|---|---|---|
+| 테스트 | 모두 통과 | 모두 통과 |
+| 충돌 발생 위치 | 전부 flush | 전부 커밋 |
+| 재시도된 충돌 | 23건 (데드락 17, 버전 충돌 6) | 24건 (데드락 20, 버전 충돌 4) |
+| 재시도 소진 | 0건 | 0건 |
+
+결론 : `saveAndFlush` 는 유지하되 이유를 바로잡음. 재시도의 필수 조건이 아니라 충돌을 일찍 드러내는 선택. 재시도의 약 80% 는 버전 충돌이 아닌 데드락이었고 원인은 미확인
 
 <br>
 
