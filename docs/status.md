@@ -14,6 +14,7 @@
 | trade | 예약 (낙관적 락 + Spring Retry) | ✅ 완료 | PR #3, ADR-2 |
 | chat | STOMP + Redis Pub/Sub 멀티 인스턴스 | ✅ 완료 | PR #4, #5, ADR-3 |
 | payment | Mock PG + Saga 보상 (T1 실패만) | 🟡 부분 | PR #7, #9, ADR-5 |
+| 구조 | 도메인 경계 + 순환 금지 (ArchUnit 5개), Saga 를 `saga` 패키지로 분리 | ✅ 완료 | PR #13, #14, ADR-1 |
 | infra | Docker + AWS 실배포 (EC2×2, ALB, RDS, ElastiCache) | ✅ 완료 (현재 정지) | PR #6, #8, ADR-6 |
 | infra | 로컬 실행 (compose + bootRun) | ✅ 확인 (2026-10-26) | [todo.md](todo.md) LOCAL-1~5 |
 | docs | README + ADR 6편 + Guide 3편 | ✅ 완료 | PR #11, #12 |
@@ -32,7 +33,8 @@
 | 커서 페이징 | 10만 건, OFFSET 14.40ms → CURSOR 0.71ms (20.1배) | ADR-4 |
 | 멀티 인스턴스 채팅 | 두 JVM 간 메시지 전달 | `ChatStompDualInstanceTest` |
 | Saga 보상 | PG 실패 → trade.cancel + Product 복원 | `TradeSagaCompensationIT` |
-| 테스트 | 단위 + 통합 138 / 0 실패 | `./gradlew test` |
+| 테스트 | 단위 + 통합 160 / 0 실패 | `./gradlew test` |
+| Retry·트랜잭션 순서 | Retry 안쪽 + `save()` : 충돌 재시도 0건, 충돌 예외 27건이 호출자까지 전달. 현재 순서 : 0건 | ADR-2 에러 상황 3 |
 
 <br>
 
@@ -47,6 +49,7 @@
 | 지표 수집 | Actuator 만 있음. Micrometer 지표 / 대시보드 없음 | Phase 2 A 에서 추가 (DEV 항목) |
 | 가격 데이터 | 벤치마크용 테스트 데이터뿐, 현실적인 가격 분포 없음 | 수작업 기준값 + 합성 확장으로 결정 (assist-spec 2-6), 기준값 조사 SPEC-4 |
 | 서킷브레이커 | 없음 (Spring Retry 만) | Phase 2 A 에서 추가 |
+| 동시 예약 데드락 | 재시도의 약 80% 가 데드락. 재시도로 처리되지만 원인 미확인 | todo INV-1 |
 | AWS | 비용 때문에 정지 상태. 재배포 ~15분 | 마지막 단계 (todo M7) |
 
 <br>
@@ -57,6 +60,8 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-05 | **trade ↔ payment 순환 해소 (PR #14)** — 순환 금지 규칙을 넣자 실패해서 발견. Saga 를 `saga` 패키지로 분리, URL 유지. 테스트 160 / 0 |
+| 2026-11-05 | **도메인 경계 정리 (PR #13)** — Repository 직접 주입 제거, 상품 상태 전이를 ProductService 로, ArchUnit 도입. "`save()` 는 재시도가 안 된다" 는 설명이 틀렸음을 실험으로 확인 (Retry 가 트랜잭션 바깥), 순서를 테스트로 고정. 테스트 156 / 0 |
 | 2026-10-30 | **SPEC-2 완료** — ADR-007 초안 (Proposed). 측정 후 Accepted 예정 |
 | 2026-10-30 | **SPEC-4 완료** — 가격 기준값 56/60줄 수작업 조사 (`seed/price-anchors.csv`). 빈 4줄은 생성기가 건너뜀. 범위 3배 초과 품목 다수 → ADR-007 에 "편차 크면 신뢰도 낮음" 규칙 반영 예정 |
 | 2026-10-29 | **SPEC-1 완료** — [assist-spec.md](specs/assist-spec.md). 비동기 대신 동기 + 타임아웃 + 폴백 + 가상 스레드로 결정 (DEV-6 취소 → DEV-12). LLM Haiku 5.5, 3초 예산 + 조건부 재시도 (MEAS-5 로 검증 예정), 가격 시드는 공개 데이터 검토 후 수작업 기준값 + 합성으로 결정 (크롤링은 데이터베이스권 리스크) |

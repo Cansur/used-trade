@@ -8,7 +8,7 @@
 
 ## 진행 중
 
-- [ ] **SPEC-3** QA 테스트 리스트 — [specs/assist-qa.md](specs/assist-qa.md) 초안 (A~L 12개 그룹), 사람 검토 대기
+- [ ] **SPEC-3** QA 테스트 리스트 — [specs/assist-qa.md](specs/assist-qa.md) 초안 (A~L 12개 그룹), 사람 검토 대기. 미결 2건: A3 설명 없이 제목만 허용 여부, F3 키워드 겹침 규칙 ("기타" 는 실제로 한 카테고리뿐. 실제 겹침은 전집, 가방 ⊂ 강아지가방, 유모차 ⊂ 강아지유모차·펫유모차)
 
 
 - [ ] **WIKI-4** Obsidian 에서 `docs/` 폴더를 볼트로 열기 + 설정 → 파일 및 링크 → "[[위키링크]] 사용" 끄기 (사람)
@@ -70,11 +70,15 @@
 
 - [ ] **TRADE-1** 거래 마무리 API — `settle` (인수 완료 → 상품 SOLD), `cancel`, 내 거래 목록. 도메인 메서드 `Trade.settle()` 은 있으나 호출하는 API 가 없음 (`TradeController` 주석에 "다음 PR" 로 남아 있음)
 - [ ] **PG-1** PG 후보 검토 — 테스트 모드로 실결제 없이 연동 가능한 곳 (예: 토스페이먼츠, 포트원) 비교
-- [ ] **PG-2** 실제 PG 어댑터 — `PaymentGatewayPort` 구현 추가, Mock 은 유지
+- [ ] **PG-2** 실제 PG 어댑터 — `PaymentGatewayPort` 구현 추가, Mock 은 유지. 참고: `MockPaymentGateway` 는 `@Profile("!prod")` 라 `prod` 프로파일에는 구현체가 없음 (현재 AWS 배포는 `docker` 프로파일이라 영향 없음)
 - [ ] **PG-3** 결제 승인 콜백 / 웹훅 검증 + 멱등성 (중복 승인 방지)
 - [ ] **OUTBOX-1** ADR-008 — Outbox 도입 여부와 범위 (T2 실패, 크래시, 보상 실패 중 무엇을 자동화할지)
 - [ ] **OUTBOX-2** Outbox 테이블 + 릴레이 (발행 / 재시도 / 실패 처리)
 - [ ] **OUTBOX-3** 장애 주입 테스트 — T2 실패, 크래시 상황에서 자동 복구 입증 + ADR-5 한계 표 갱신
+
+### 조사
+
+- [ ] **INV-1** 동시 예약 데드락 원인 조사 — 재시도의 약 80% 가 버전 충돌이 아닌 데드락 (`CannotAcquireLockException`), 원인 미확인 ([ADR-2](adr/002-optimistic-locking.md) 에러 상황 3). `SHOW ENGINE INNODB STATUS` 로 확인
 
 ### M7. AWS 재배포 (마지막)
 
@@ -85,6 +89,9 @@
 <br>
 
 ## 완료
+
+- [x] **ARCH-2** trade ↔ payment 패키지 순환 해소 + 순환 금지 규칙 — 근거: PR #14 (`d1e41e7`). `saga` 패키지 분리, `ArchitectureTest.noCyclesBetweenTopLevelPackages` 이동 전 실패 / 이동 후 통과, 전체 160 / 0, 확정 API HTTP 확인 (401 / 403 / 200 / 404), [ADR-1](adr/001-modular-monolith.md) 에러 상황 2
+- [x] **ARCH-1** 도메인 경계 정리 — 근거: PR #13 (`3b72ab1`). 다른 도메인 Repository 주입 제거, 상품 상태 전이를 `ProductService` 로 이동 (`Propagation.MANDATORY`), ArchUnit 규칙 4개, `TradeServiceAdviceOrderTest`. 전체 156 / 0, [ADR-1](adr/001-modular-monolith.md) 에러 상황 3·4, [ADR-2](adr/002-optimistic-locking.md) 에러 상황 3
 
 - [x] **SPEC-2** ADR-007 초안 — 근거: [adr/007-listing-assist.md](adr/007-listing-assist.md) (Proposed). 별도 `assist` 도메인 + product 조회 Service, `LlmClientPort` (실패 종류별 sealed 결과), 폴백 표, Redis 키 2종 (분 단위 고정 윈도우 / 완전 일치 캐시 v1), 가격 신뢰도. 2026-10-30 사람 검토 완료
 
