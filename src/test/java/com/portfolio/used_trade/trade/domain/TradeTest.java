@@ -55,14 +55,14 @@ class TradeTest {
     class Factory {
 
         @Test
-        @DisplayName("거래 생성 직후 상태는 RESERVED, Product 는 TRADING 으로 전이된다")
+        @DisplayName("거래 생성 직후 상태는 RESERVED — Product 상태는 건드리지 않는다 (product 도메인 책임)")
         void reserve_initialState() {
             Trade trade = Trade.reserve(product, buyer);
 
             assertThat(trade.getStatus()).isEqualTo(TradeStatus.RESERVED);
             assertThat(trade.getProduct()).isSameAs(product);
             assertThat(trade.getBuyer()).isSameAs(buyer);
-            assertThat(product.getStatus()).isEqualTo(ProductStatus.TRADING);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
         }
 
         @Test
@@ -74,17 +74,6 @@ class TradeTest {
             product.changePrice(2_000_000L);
 
             assertThat(trade.getPricePaid()).isEqualTo(1_200_000L);
-        }
-
-        @Test
-        @DisplayName("이미 TRADING 인 상품은 예약 불가 — Product.reserve() 의 가드가 그대로 노출")
-        void reserve_alreadyTradingProduct_throws() {
-            product.reserve();   // AVAILABLE → TRADING (앞선 다른 거래로 선점됨)
-
-            assertThatThrownBy(() -> Trade.reserve(product, buyer))
-                    .isInstanceOf(BusinessException.class)
-                    .extracting(e -> ((BusinessException) e).getErrorCode())
-                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
         }
 
         @Test
@@ -104,6 +93,7 @@ class TradeTest {
         @Test
         @DisplayName("confirm() — RESERVED 에서 CONFIRMED 로 전이 (Product 상태는 그대로 TRADING)")
         void confirm_fromReserved_toConfirmed() {
+            product.reserve();   // 서비스가 ProductService.reserve 로 처리하는 상태를 재현
             Trade trade = Trade.reserve(product, buyer);
 
             trade.confirm();
@@ -113,26 +103,28 @@ class TradeTest {
         }
 
         @Test
-        @DisplayName("settle() — CONFIRMED 에서 SETTLED 로 전이 + Product 는 SOLD")
+        @DisplayName("settle() — CONFIRMED 에서 SETTLED 로 전이, Product 는 건드리지 않음 (ProductService.markSold 책임)")
         void settle_fromConfirmed_toSettled() {
+            product.reserve();   // 서비스가 ProductService.reserve 로 처리하는 상태를 재현
             Trade trade = Trade.reserve(product, buyer);
             trade.confirm();
 
             trade.settle();
 
             assertThat(trade.getStatus()).isEqualTo(TradeStatus.SETTLED);
-            assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.TRADING);
         }
 
         @Test
-        @DisplayName("cancel() — RESERVED 에서 CANCELED 로 전이 + Product 는 AVAILABLE 로 복귀")
+        @DisplayName("cancel() — RESERVED 에서 CANCELED 로 전이, Product 는 건드리지 않음 (ProductService.cancelReservation 책임)")
         void cancel_fromReserved_toCanceled() {
+            product.reserve();   // 서비스가 ProductService.reserve 로 처리하는 상태를 재현
             Trade trade = Trade.reserve(product, buyer);
 
             trade.cancel();
 
             assertThat(trade.getStatus()).isEqualTo(TradeStatus.CANCELED);
-            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.TRADING);
         }
     }
 

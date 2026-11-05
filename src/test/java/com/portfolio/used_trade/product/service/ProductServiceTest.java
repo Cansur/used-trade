@@ -12,7 +12,7 @@ import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
 import com.portfolio.used_trade.product.repository.CategoryRepository;
 import com.portfolio.used_trade.product.repository.ProductRepository;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -48,7 +48,7 @@ class ProductServiceTest {
 
     @Mock private ProductRepository productRepository;
     @Mock private CategoryRepository categoryRepository;
-    @Mock private UserRepository userRepository;
+    @Mock private UserService userService;
 
     @InjectMocks private ProductService productService;
 
@@ -93,7 +93,7 @@ class ProductServiceTest {
         void happy() {
             // ── Arrange ──
             var request = new ProductRegisterRequest(1L, "아이폰 15", "박스 미개봉", 1_200_000L);
-            given(userRepository.findById(100L)).willReturn(Optional.of(seller));
+            given(userService.getUser(100L)).willReturn(seller);
             given(categoryRepository.findById(1L)).willReturn(Optional.of(electronics));
             given(productRepository.save(any(Product.class))).willAnswer(inv -> {
                 Product p = inv.getArgument(0);
@@ -119,7 +119,7 @@ class ProductServiceTest {
         @DisplayName("토큰은 유효하지만 사용자가 DB 에 없으면 USER_NOT_FOUND")
         void userNotFound() {
             var request = new ProductRegisterRequest(1L, "t", "d", 100L);
-            given(userRepository.findById(100L)).willReturn(Optional.empty());
+            given(userService.getUser(100L)).willThrow(new BusinessException(ErrorCode.USER_NOT_FOUND));
 
             assertThatThrownBy(() -> productService.register(100L, request))
                     .isInstanceOf(BusinessException.class)
@@ -135,7 +135,7 @@ class ProductServiceTest {
         @DisplayName("잘못된 카테고리 id 면 CATEGORY_NOT_FOUND")
         void categoryNotFound() {
             var request = new ProductRegisterRequest(99L, "t", "d", 100L);
-            given(userRepository.findById(100L)).willReturn(Optional.of(seller));
+            given(userService.getUser(100L)).willReturn(seller);
             given(categoryRepository.findById(99L)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> productService.register(100L, request))
@@ -375,6 +375,92 @@ class ProductServiceTest {
                     .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
 
             verify(productRepository, never()).delete(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("거래 연동 상태 전이 — reserve / markSold / cancelReservation")
+    class TradeTransitions {
+
+        @Test
+        @DisplayName("reserve — AVAILABLE 상품이 TRADING 으로 전이")
+        void reserve_available_toTrading() {
+            Product product = makeProduct(ProductStatus.AVAILABLE);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            productService.reserve(10L);
+
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.TRADING);
+        }
+
+        @Test
+        @DisplayName("reserve — 이미 TRADING 이면 PRODUCT_NOT_AVAILABLE")
+        void reserve_trading_throws() {
+            given(productRepository.findById(10L)).willReturn(Optional.of(makeProduct(ProductStatus.TRADING)));
+
+            assertThatThrownBy(() -> productService.reserve(10L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("reserve — 없는 상품이면 PRODUCT_NOT_FOUND")
+        void reserve_missing_throws() {
+            given(productRepository.findById(404L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> productService.reserve(404L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_FOUND);
+        }
+
+        @Test
+        @DisplayName("cancelReservation — TRADING 상품이 AVAILABLE 로 복귀")
+        void cancelReservation_trading_toAvailable() {
+            Product product = makeProduct(ProductStatus.TRADING);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            productService.cancelReservation(10L);
+
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("cancelReservation — TRADING 이 아니면 PRODUCT_NOT_AVAILABLE, 상태 유지")
+        void cancelReservation_available_throws() {
+            Product product = makeProduct(ProductStatus.AVAILABLE);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            assertThatThrownBy(() -> productService.cancelReservation(10L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("markSold — TRADING 이 아니면 PRODUCT_NOT_AVAILABLE, 상태 유지")
+        void markSold_available_throws() {
+            Product product = makeProduct(ProductStatus.AVAILABLE);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            assertThatThrownBy(() -> productService.markSold(10L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.PRODUCT_NOT_AVAILABLE);
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.AVAILABLE);
+        }
+
+        @Test
+        @DisplayName("markSold — TRADING 상품이 SOLD 로 전이")
+        void markSold_trading_toSold() {
+            Product product = makeProduct(ProductStatus.TRADING);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+
+            productService.markSold(10L);
+
+            assertThat(product.getStatus()).isEqualTo(ProductStatus.SOLD);
         }
     }
 }

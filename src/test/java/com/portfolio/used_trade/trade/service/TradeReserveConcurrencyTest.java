@@ -54,8 +54,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li>Product 의 {@code @Version} — 동일 row 동시 update 시도 시 1건만 commit, 나머지는
  *       {@link org.springframework.dao.OptimisticLockingFailureException}</li>
- *   <li>{@code TradeService.reserve()} 의 {@code @Retryable + saveAndFlush} —
- *       메서드 안에서 충돌이 터지도록 강제하고 재시도</li>
+ *   <li>{@code TradeService.reserve()} 의 {@code @Retryable} — 충돌을 재시도.
+ *       {@code saveAndFlush} 는 충돌을 커밋 전에 드러낼 뿐, 재시도 자체의 필수 조건은 아니다 (ADR-2 에러 상황 3)</li>
  *   <li>재시도 시점에는 product status 가 이미 TRADING → 도메인 가드가
  *       {@link ErrorCode#PRODUCT_NOT_AVAILABLE} 로 즉시 거부 → {@code @Recover(BusinessException)}
  *       경로로 그대로 rethrow</li>

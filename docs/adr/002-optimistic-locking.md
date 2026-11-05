@@ -21,7 +21,7 @@
 거래 예약(`reserve`)의 동시성 제어로 낙관적 락 + Spring Retry.
 
 - `Product`에 `@Version` 으로 동일 row 동시 갱신 검출
-- `TradeService.reserve` 에 `@Retryable` + `saveAndFlush` 로 충돌을 메서드 내부에서 검출 후 재시도
+- `TradeService.reserve` 에 `@Retryable` 로 충돌 재시도, `saveAndFlush` 로 충돌을 커밋 전에 메서드 안에서 검출
 
 ## 비교
 
@@ -56,7 +56,7 @@ public class Product {
 ### 2. @Retryable + saveAndFlush
 ```java
 @Retryable(
-    retryFor = OptimisticLockingFailureException.class,
+    retryFor = {OptimisticLockingFailureException.class, CannotAcquireLockException.class},
     maxAttempts = 3,
     backoff = @Backoff(delay = 50, multiplier = 2)
 )
@@ -69,7 +69,7 @@ public TradeResponse reserve(Long buyerId, Long productId) {
 }
 ```
 
-- saveAndFlush - 충돌을 메서드 안에서 발생시켜 @Retryable이 잡게 함
+- saveAndFlush - 충돌을 커밋 전에 메서드 안에서 드러냄. 재시도의 필수 조건은 아님 (에러 상황 3)
 - 재시도 정책 - 최대 3회, 50ms × 2
 
 ### 측정 결과
@@ -99,6 +99,37 @@ public TradeResponse reserve(Long buyerId, Long productId) {
 
 결론 : Spring Retry가 그대로 통과 시키도록 `@Recover`를 사용
 
+### 3. saveAndFlush 설명이 틀렸음
+
+상황 : "`save()` 는 커밋 때 flush 되어 충돌이 메서드 밖에서 터지므로 `@Retryable` 이 못 잡는다" 고 코드 주석과 이 문서에 적어 둠
+
+문제 : `@EnableRetry` 의 기본 order 가 `LOWEST_PRECEDENCE - 1` 이라 Retry 가 트랜잭션보다 바깥. 커밋 시점 예외도 Retry 안쪽에서 발생
+
+검증 : `save()` 로 바꿔 N=20, N=50 테스트를 3회씩 실행하고 `RetryListener` 로 예외 발생 위치 기록 (2026-11-04)
+
+| | `saveAndFlush` | `save` |
+|---|---|---|
+| 테스트 | 모두 통과 | 모두 통과 |
+| 충돌 발생 위치 | 전부 flush | 전부 커밋 |
+| 재시도된 충돌 | 23건 (데드락 17, 버전 충돌 6) | 24건 (데드락 20, 버전 충돌 4) |
+| 재시도 소진 | 0건 | 0건 |
+
+결론 : `saveAndFlush` 는 유지하되 이유를 바로잡음. 재시도의 필수 조건이 아니라 충돌을 일찍 드러내는 선택. 재시도의 약 80% 는 버전 충돌이 아닌 데드락이었고 원인은 미확인
+
+원인 검증 : 트랜잭션 advisor 를 `order=0` 으로 올려 순서를 뒤집고, N=20 을 3회씩 실행해 비교 (2026-11-05)
+
+| 순서 | 방식 | 충돌 발생 위치 | Retry 가 잡은 충돌 | 잡을 때 트랜잭션 | 호출자까지 나간 충돌 예외 |
+|---|---|---|---|---|---|
+| Retry 바깥 (현재) | `saveAndFlush` | flush | 12건 | 종료됨 | 0건 |
+| Retry 바깥 (현재) | `save` | 커밋 | 21건 | 종료됨 | 0건 |
+| Retry 안쪽 (뒤집음) | `saveAndFlush` | flush | 14건 | 진행 중 | 0건 |
+| Retry 안쪽 (뒤집음) | `save` | 커밋 | 0건 | - | 27건 |
+
+- 처음 예측은 Retry 가 트랜잭션 안쪽일 때만 맞음. 전제를 코드에서 확인하지 않은 것이 원인
+- Retry 가 바깥이어야 시도마다 새 트랜잭션이 시작됨. 안쪽이면 실패한 트랜잭션 안에서 다시 시도함
+- 어노테이션을 적는 순서는 무관. advice 순서는 advisor 의 order 로 정해짐 (`@Transactional` 을 위로 옮기고 `save()` 로 바꿔도 `TradeReserveConcurrencyTest` 3회 통과)
+- 이 순서는 `@EnableRetry` 기본값에 기대고, 뒤집혀도 `TradeReserveConcurrencyTest` 는 통과함. 그래서 `TradeServiceAdviceOrderTest` 로 고정
+
 <br>
 
 ## 참조
@@ -106,4 +137,5 @@ public TradeResponse reserve(Long buyerId, Long productId) {
 - [Product](../../src/main/java/com/portfolio/used_trade/product/domain/Product.java) — `@Version` 필드 위치
 - [TradeService](../../src/main/java/com/portfolio/used_trade/trade/service/TradeService.java) — `@Retryable` + `saveAndFlush` 구현
 - [TradeReserveConcurrencyTest](../../src/test/java/com/portfolio/used_trade/trade/service/TradeReserveConcurrencyTest.java) — N=20 정확성 회귀 가드
+- [TradeServiceAdviceOrderTest](../../src/test/java/com/portfolio/used_trade/trade/service/TradeServiceAdviceOrderTest.java) — Retry 가 트랜잭션 바깥인지 고정
 - [TradeReserveLoadTest](../../src/test/java/com/portfolio/used_trade/trade/service/TradeReserveLoadTest.java) — N=50 정량 측정 (p95)

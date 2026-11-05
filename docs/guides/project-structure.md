@@ -74,6 +74,26 @@ com.portfolio.used_trade/
 - `pubsub` — 이벤트 발행 / 구독 인프라
 - `security` — 인증 / 인가 관련 (user 도메인 한정)
 
+### 계층 흐름 — 한 도메인 안
+
+```
+요청 ─▶ controller ─▶ service ─▶ repository ─▶ DB
+                        │
+                        └─▶ 다른 도메인의 service (조회는 getUser / getProduct)
+```
+
+| 계층 | 부를 수 있는 것 | 부를 수 없는 것 |
+|---|---|---|
+| controller | 자기 도메인 service, dto | repository (건너뛰기 ❌) |
+| service | 자기 repository, 다른 도메인 **service**, domain, dto | 다른 도메인 **repository** ❌, controller ❌ |
+| repository | domain (엔티티) | service, controller ❌ |
+| domain (엔티티) | 같은 도메인 엔티티 (기존 도메인은 다른 도메인 엔티티 연관 허용 — 규칙 2) | service, repository, controller ❌ |
+| 보조 (config / security / bootstrap) | service, repository | — |
+
+- 위로 거슬러 부르거나 (repository → service), 한 칸 건너뛰는 것 (controller → repository) 은 금지
+- 다른 도메인과는 **service 끼리만** 대화한다
+- 이 표는 `ArchitectureTest` 가 강제한다 — 어기면 `./gradlew test` 실패 (아래 "규칙 강제")
+
 ---
 
 ## 의존 규칙
@@ -95,26 +115,23 @@ com.portfolio.used_trade/
 
 **이유**: common 이 도메인에 의존하면 cross-cutting 모듈이 아니라 또 다른 도메인이 됨. 그러면 어떤 도메인을 분리할 때 common 도 같이 끌려다님.
 
-### 규칙 2: 도메인 간 — ID (값) 만 참조, 엔티티 직접 참조 금지
+### 규칙 2: 도메인 간 — 다른 도메인 Repository 직접 주입 금지, 소유 Service 경유
 
 ```java
-// ✅ OK — ID 만
-public class ChatRoom {
-    private Long buyerId;   // User 의 ID (값)
-    private Long sellerId;
-    private Long productId; // Product 의 ID (값)
+// ❌ 안 됨 — 다른 도메인 Repository
+public class TradeService {
+    private final ProductRepository productRepository;
 }
 
-// ❌ 안 됨 — 엔티티 직접
-public class ChatRoom {
-    @ManyToOne
-    private User buyer;     // Cross-domain 엔티티 참조
+// ✅ OK — 소유 도메인 Service 의 조회 메서드
+public class TradeService {
+    private final ProductService productService;   // productService.getProduct(id)
 }
 ```
 
-**이유**:
-- Cross-domain 엔티티 참조하면 JPA fetch 전략 / 연관 관계 매핑이 그 도메인의 변경에 영향 받음 → 분리 시 의존성 헝클어짐
-- ID 만 들고 있으면 추후 다른 도메인을 다른 DB 로 분리하거나 MSA 로 이전할 때 그대로 가능
+**이유**: 조회·존재 검증·NOT_FOUND 처리는 소유 도메인의 책임. Repository 를 직접 쓰면 그 규칙이 여러 도메인에 복사됨.
+
+**엔티티 연관 (현실)**: 기존 5개 도메인은 `@ManyToOne` 으로 다른 도메인 엔티티를 참조합니다 (`ChatRoom.buyer: User` 등 7곳). 처음엔 "ID 만" 을 규칙으로 적었으나 코드가 따르지 않았고, 2026-10-30 점검에서 발견해 문서를 현실에 맞췄습니다 — [ADR-1 에러 상황 4](../adr/001-modular-monolith.md). 신규 도메인 (`assist`) 은 ID 값만 참조합니다.
 
 ### 규칙 3: Cross-domain 흐름은 별도 Service
 
@@ -139,6 +156,22 @@ public class TradeSagaService {
 ```
 
 → "Saga 클래스" 자체가 cross-domain 의존을 명시적으로 격리하는 역할. 다른 일반 Service 는 자기 도메인 안에서만 동작.
+
+---
+
+## 규칙 강제 — `ArchitectureTest` (ArchUnit)
+
+[ArchitectureTest](../../src/test/java/com/portfolio/used_trade/architecture/ArchitectureTest.java) 의 4개 규칙. 도메인 이름을 나열하지 않고 패키지 패턴으로 써서, 도메인이 늘어도 파일이 바뀌지 않는다.
+
+| 규칙 | 근거 |
+|---|---|
+| 계층 — controller → service → repository, 역방향·건너뛰기 금지 | 위 계층 흐름 |
+| 다른 도메인 repository 의존 금지 | 규칙 2, ADR-1 에러 상황 3 |
+| common → 도메인 의존 금지 | 규칙 1 |
+| assist 는 다른 도메인 엔티티 의존 금지 (ID 값만) | ADR-1 에러 상황 4 |
+
+- 규칙은 **ADR 에 경계 결정이 생길 때만** 추가한다 (스타일·이름 규칙은 넣지 않음)
+- 검증 : 일부러 위반 클래스 3개를 넣어 4개 규칙이 모두 실패하는 것을 확인 후 제거 (2026-10-31)
 
 ---
 
@@ -213,7 +246,7 @@ public record TradeResponse(
 원칙:
 - **`record` — Java 16+ 의 immutable 데이터** — getter / equals / hashCode / toString 자동
 - **`from(Entity)` 정적 팩토리** — 매핑 책임을 DTO 가 가짐 (Service 에서 매핑 코드 없음)
-- **변환은 단방향** — DTO → Entity 변환은 도메인 정적 팩토리 (예: `Trade.reserve(buyer, product)`) 가 책임
+- **변환은 단방향** — DTO → Entity 변환은 도메인 정적 팩토리 (예: `Trade.reserve(product, buyer)`) 가 책임
 - **Bean Validation** 어노테이션은 Request DTO 에만 (Response 에는 의미 없음)
 
 ---
@@ -249,10 +282,10 @@ public record ApiResponse<T>(
 
 **A**: "세 가지 규칙으로:
 1. 의존 방향 단방향 — 도메인 → common, common ↛ 도메인. `common` import 만 봐도 위반 즉시 발견.
-2. 도메인 간 엔티티 직접 참조 금지 — ID (값) 만 들고 있음. `ChatRoom.buyerId: Long` 같은 식. JPA `@ManyToOne` 으로 다른 도메인 entity 매핑 X.
+2. 다른 도메인 Repository 직접 주입 금지 — `ProductService.getProduct(id)` 처럼 소유 도메인 Service 를 거침. 조회·NOT_FOUND 처리는 소유 도메인 책임.
 3. Cross-domain 흐름은 Saga 클래스 같은 별도 Service 에 격리 — 그 흐름의 비즈니스 owner 도메인 안에 둠.
 
-컴파일 시점 enforce (ArchUnit) 는 안 했어요 — 본 프로젝트 규모에선 PR 코드 리뷰가 더 효과적이라 판단. 도메인이 늘어나거나 팀이 커지면 ArchUnit 도입 고려."
+솔직히 처음엔 '엔티티는 ID 만 참조' 도 규칙으로 적었는데 코드가 `@ManyToOne` 으로 다른 도메인 엔티티를 들고 있었고, Repository 직접 주입도 4곳 있었어요. 문서로만 둔 규칙이라 어긋나도 몰랐던 거죠. 점검해서 Repository 는 소유 Service 경유로, trade 가 상품 상태를 직접 바꾸던 것도 ProductService 로 옮겼고 (같은 트랜잭션에 합류하니 @Version 검사는 그대로 — 동시성 테스트로 확인), 엔티티 연관은 전환 비용 대비 이득이 작아 유지하고 문서를 현실에 맞췄습니다. 그래서 ArchUnit 으로 경계 규칙 4개를 테스트에 넣었어요. 도메인 이름을 나열하지 않고 패키지 패턴으로 써서 도메인이 늘어도 규칙은 그대로고, 일부러 위반을 넣어 실제로 실패하는 것까지 확인했습니다."
 
 ### Q. "왜 SecurityConfig 가 common 이 아니라 user 안에 있어요?"
 

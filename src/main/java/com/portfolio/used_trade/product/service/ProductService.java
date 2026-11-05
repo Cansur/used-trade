@@ -12,10 +12,11 @@ import com.portfolio.used_trade.product.dto.ProductUpdateRequest;
 import com.portfolio.used_trade.product.repository.CategoryRepository;
 import com.portfolio.used_trade.product.repository.ProductRepository;
 import com.portfolio.used_trade.user.domain.User;
-import com.portfolio.used_trade.user.repository.UserRepository;
+import com.portfolio.used_trade.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -52,7 +53,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
     /**
      * 상품 등록. 인증된 사용자 id 와 함께 호출된다.
@@ -62,8 +63,7 @@ public class ProductService {
      */
     @Transactional
     public ProductResponse register(Long sellerId, ProductRegisterRequest request) {
-        User seller = userRepository.findById(sellerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        User seller = userService.getUser(sellerId);
         Category category = categoryRepository.findById(request.categoryId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.CATEGORY_NOT_FOUND));
 
@@ -81,9 +81,58 @@ public class ProductService {
      * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
      */
     public ProductResponse findById(Long productId) {
-        Product product = productRepository.findById(productId)
+        return ProductResponse.from(getProduct(productId));
+    }
+
+    /**
+     * 다른 도메인이 상품 엔티티를 얻는 유일한 경로 — {@code ProductRepository} 직접 주입 금지 (ADR-1).
+     *
+     * <p>호출자의 쓰기 트랜잭션에 참여하므로 반환 엔티티는 호출자의 영속성 컨텍스트에서 관리된다.
+     * trade 예약의 {@code @Version} 충돌 검출도 그대로 동작한다.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
+     */
+    public Product getProduct(Long productId) {
+        return productRepository.findById(productId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
-        return ProductResponse.from(product);
+    }
+
+    // ---------- 거래 연동 상태 전이 (trade 도메인이 호출) ----------
+    //
+    // AI-NOTE: 이 세 메서드는 호출자(TradeService)의 쓰기 트랜잭션 안에서만 불려야 해서 MANDATORY 로 강제한다.
+    // 같은 트랜잭션이어야 상품 상태 변경과 거래 저장이 함께 커밋/롤백되고, @Version 충돌도 Spring Retry 로 이어진다 (ADR-2).
+    // 트랜잭션 없이 부르면 IllegalTransactionStateException. REQUIRES_NEW 로 바꾸면 상품만 먼저 커밋되어
+    // 거래 저장 실패 시 상품이 TRADING 에 남는다.
+
+    /**
+     * 예약 — AVAILABLE → TRADING.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_FOUND}
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} 이미 예약/판매완료
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void reserve(Long productId) {
+        getProduct(productId).reserve();
+    }
+
+    /**
+     * 판매 완료 — TRADING → SOLD. 거래 마무리 API (TRADE-1) 에서 호출 예정.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} TRADING 이 아님
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void markSold(Long productId) {
+        getProduct(productId).markSold();
+    }
+
+    /**
+     * 예약 취소 — TRADING → AVAILABLE. 거래 취소와 Saga 보상 경로에서 호출.
+     *
+     * @throws BusinessException {@link ErrorCode#PRODUCT_NOT_AVAILABLE} TRADING 이 아님
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void cancelReservation(Long productId) {
+        getProduct(productId).cancelReservation();
     }
 
     /**
@@ -170,8 +219,7 @@ public class ProductService {
      * 한 메서드에서 같은 가드를 반복하지 않도록 분리.
      */
     private Product loadAndCheckMutable(Long sellerId, Long productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
+        Product product = getProduct(productId);
         if (!product.isOwnedBy(sellerId)) {
             throw new BusinessException(ErrorCode.NOT_PRODUCT_OWNER);
         }

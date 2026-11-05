@@ -17,6 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Optional;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -112,5 +114,37 @@ class UserServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getPassword()).isEqualTo("$2a$10$HASHED");
+    }
+
+    @Test
+    @DisplayName("getUser — 존재하는 id 면 엔티티 반환 (다른 도메인용 조회 경로)")
+    void getUser_existing_returnsEntity() {
+        User user = User.create("d@b.com", "HASHED", "dan");
+        given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+        assertThat(userService.getUser(1L)).isSameAs(user);
+    }
+
+    @Test
+    @DisplayName("getUser — 없는 id 면 USER_NOT_FOUND")
+    void getUser_missing_throwsUserNotFound() {
+        given(userRepository.findById(404L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.getUser(404L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("verifyExists — 없는 id 면 USER_NOT_FOUND, 엔티티는 로딩하지 않음")
+    void verifyExists_missing_throwsWithoutLoading() {
+        given(userRepository.existsById(404L)).willReturn(false);
+
+        assertThatThrownBy(() -> userService.verifyExists(404L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        verify(userRepository, never()).findById(any());
     }
 }
