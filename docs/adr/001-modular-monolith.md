@@ -83,7 +83,14 @@ MSA 선택 X
 - payment : `payment`는 SDK처럼 호출만 됨 (X)
 - common : `trade`, `payment` 의존 (X)
 
-결론 : `trade.service.TradeSagaService`에 두었습니다.
+결론 : ~~`trade.service.TradeSagaService`에 두었습니다.~~ → **변경 (2026-11-05)** `saga.service.TradeSagaService` 로 이동
+
+- 문제 : 조율자가 `trade` 안에 있어 `trade → payment` 가 생기고, `Payment → Trade` 연관과 합쳐 패키지 순환이 됨. 순환 금지 규칙을 넣자 실패해서 발견 (trade 쪽 클래스 2개, payment 쪽 클래스 2개)
+- 비교 : 이 순환만 규칙 예외로 두기 (순환이 남음) / 규칙을 넣지 않기 (새 순환을 못 잡음) / `saga` 패키지로 분리 (채택)
+- 변경 : `saga → trade, payment`, `payment → trade` 한 방향. 확정 API 는 `TradeSagaController` 로 옮겼고 URL 은 그대로
+- 함께 해결 : Saga 의 거래 조회를 `TradeService.getTradeOfBuyer` 로 옮김. 기존 `loadAndValidateBuyer` 는 자기 호출이라 `@Transactional` 이 적용되지 않았고, 이제 프록시를 거쳐 적용됨
+- 검증 : 순환 규칙이 이동 전 실패, 이동 후 통과. 전체 테스트 통과. 실제 앱에서 `POST /api/trades/{id}/confirm` 호출 시 토큰 없음 401, 판매자 403, 구매자 200 (CONFIRMED + PAID), 없는 거래 404
+- 남은 것 : `saga` 는 `Trade` 엔티티를 그대로 받아 `PaymentService.charge(Trade)` 에 넘김. 패키지 순환은 없지만 엔티티 의존은 에러 상황 4 의 결정대로 유지
 
 ### 3. TradeService에 다른 도메인 Repository 주입
 
@@ -121,13 +128,13 @@ Message → User      Payment → Trade
 
 결론 : 연관 유지, 문서를 현실에 맞게 수정. 신규 도메인 (`assist`) 부터는 ID 값만 참조. ID 전환은 도메인을 실제로 분리할 필요가 생길 때 진행
 
-교훈 : 설계 규칙을 문서로만 두면 코드와 어긋나도 모른다 → `ArchitectureTest` (ArchUnit) 로 계층·도메인 경계·common·assist 규칙 4개를 테스트로 강제 (2026-10-31)
+교훈 : 설계 규칙을 문서로만 두면 코드와 어긋나도 모른다 → `ArchitectureTest` (ArchUnit) 로 계층·도메인 경계·common·assist 규칙 4개를 테스트로 강제 (2026-10-31), 패키지 순환 금지 규칙 추가 (2026-11-05, 에러 상황 2)
 
 <br>
 
 ## 참조
 
-- [TradeSagaService](../../src/main/java/com/portfolio/used_trade/trade/service/TradeSagaService.java) - cross-domain 흐름의 owner 도메인 격리
+- [TradeSagaService](../../src/main/java/com/portfolio/used_trade/saga/service/TradeSagaService.java) - 에러 상황 2, 도메인 간 흐름의 조율자
 - [SecurityConfig](../../src/main/java/com/portfolio/used_trade/user/security/SecurityConfig.java) - 에러 상황 1
 - [TradeService](../../src/main/java/com/portfolio/used_trade/trade/service/TradeService.java) - 에러 상황 3
 - [README — 아키텍처](../../README.md#아키텍처) - 도메인 의존 다이어그램

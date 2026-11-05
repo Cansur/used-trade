@@ -32,7 +32,7 @@ PG가 결제를 받았는데 우리 DB만 롤백되면 이중장부가 발생합
 
 **Choreography 선택 X**
 - 모놀리스에선 Choreography의 장점(낮은 결합)이 작고 인프라 추가 비용 발생
-- 거래 흐름의 owner(`trade`)가 명확해 Orchestration이 디버깅·구현 둘 다 유리
+- 거래 확정 흐름을 조율자(`saga` 패키지) 한 곳에 모을 수 있어 Orchestration이 디버깅·구현 둘 다 유리 (패키지 위치는 ADR-1 에러 상황 2)
 
 ## 구현 방법
 
@@ -53,7 +53,7 @@ public class TradeSagaService {
 
     // @Transactional 없음
     public TradeConfirmResponse confirm(Long buyerId, Long tradeId) {
-        Trade trade = loadAndValidate(buyerId, tradeId);
+        Trade trade = tradeService.getTradeOfBuyer(buyerId, tradeId);
         PaymentResponse payment = paymentService.charge(trade);
         
         if (payment.status() == PAID) {
@@ -106,7 +106,7 @@ public class PaymentService {
 
 ## 참조
 
-- [TradeSagaService](../../src/main/java/com/portfolio/used_trade/trade/service/TradeSagaService.java) — Saga 조율자
+- [TradeSagaService](../../src/main/java/com/portfolio/used_trade/saga/service/TradeSagaService.java) — Saga 조율자
 - [PaymentService](../../src/main/java/com/portfolio/used_trade/payment/service/PaymentService.java) — FAILED도 영속화하는 로직
 - [PaymentGatewayPort](../../src/main/java/com/portfolio/used_trade/payment/gateway/PaymentGatewayPort.java) — 외부 PG 추상화
-- [TradeSagaCompensationIT](../../src/test/java/com/portfolio/used_trade/trade/service/TradeSagaCompensationIT.java) — 보상 동작 검증 통합 테스트
+- [TradeSagaCompensationIT](../../src/test/java/com/portfolio/used_trade/saga/service/TradeSagaCompensationIT.java) — 보상 동작 검증 통합 테스트

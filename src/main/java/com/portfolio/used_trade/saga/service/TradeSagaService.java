@@ -1,18 +1,17 @@
-package com.portfolio.used_trade.trade.service;
+package com.portfolio.used_trade.saga.service;
 
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
 import com.portfolio.used_trade.payment.domain.PaymentStatus;
 import com.portfolio.used_trade.payment.dto.PaymentResponse;
 import com.portfolio.used_trade.payment.service.PaymentService;
+import com.portfolio.used_trade.saga.dto.TradeConfirmResponse;
 import com.portfolio.used_trade.trade.domain.Trade;
-import com.portfolio.used_trade.trade.dto.TradeConfirmResponse;
 import com.portfolio.used_trade.trade.dto.TradeResponse;
-import com.portfolio.used_trade.trade.repository.TradeRepository;
+import com.portfolio.used_trade.trade.service.TradeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 거래 확정 (confirm) 의 Saga Orchestrator — payment + trade 두 단계 조율.
@@ -25,6 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
  *        └─ FAILED → T1'. trade.cancel()  (보상: RESERVED → CANCELED + Product 복원)
  *                          + BusinessException(PAYMENT_FAILED) throw
  * </pre>
+ *
+ * <p><b>왜 trade 가 아니라 saga 패키지인가?</b>
+ * 조율자는 trade 와 payment 를 모두 알아야 한다. trade 안에 두면 payment → trade 와 합쳐
+ * 패키지 순환이 생긴다 (ADR-1 에러 상황 2).
  *
  * <p><b>왜 Saga 메서드 자체에 {@code @Transactional} 을 안 두는가?</b>
  * Saga 의 본질은 <b>각 단계가 독립 트랜잭션</b>. 묶으면 ACID 한 트랜잭션이라 Saga 의미 무너짐.
@@ -43,7 +46,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class TradeSagaService {
 
-    private final TradeRepository tradeRepository;
     private final TradeService tradeService;
     private final PaymentService paymentService;
 
@@ -58,7 +60,7 @@ public class TradeSagaService {
      */
     public TradeConfirmResponse confirm(Long buyerId, Long tradeId) {
         // ----- T0: 사전 validate (read-only, 자기 트랜잭션) -----
-        Trade trade = loadAndValidateBuyer(tradeId, buyerId);
+        Trade trade = tradeService.getTradeOfBuyer(buyerId, tradeId);
 
         // ----- T1: payment.charge — 자기 트랜잭션, 결과 영속 -----
         PaymentResponse payment = paymentService.charge(trade);
@@ -88,15 +90,5 @@ public class TradeSagaService {
             }
             throw new BusinessException(ErrorCode.PAYMENT_FAILED);
         }
-    }
-
-    @Transactional(readOnly = true)
-    protected Trade loadAndValidateBuyer(Long tradeId, Long buyerId) {
-        Trade trade = tradeRepository.findById(tradeId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.TRADE_NOT_FOUND));
-        if (!trade.isBuyer(buyerId)) {
-            throw new BusinessException(ErrorCode.NOT_PRODUCT_OWNER);
-        }
-        return trade;
     }
 }

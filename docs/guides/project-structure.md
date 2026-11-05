@@ -30,12 +30,16 @@ com.portfolio.used_trade/
 │   ├── dto/                         ProductRegisterRequest, ProductUpdateRequest, ProductResponse, ProductCursorPageResponse
 │   ├── bootstrap/                   CategoryDataInitializer (시드 데이터)
 │   └── storage/                     ImageStoragePort, MockImageStorage (Hexagonal Port/Adapter)
-├── trade/                           거래 (ADR-2 / Saga)
+├── saga/                            도메인 간 흐름 조율 (ADR-5) — 엔티티·repository 없음
+│   ├── controller/                  TradeSagaController
+│   ├── service/                     TradeSagaService
+│   └── dto/                         TradeConfirmResponse
+├── trade/                           거래 (ADR-2)
 │   ├── controller/                  TradeController
-│   ├── service/                     TradeService, TradeSagaService, TradeServiceNaive (ADR-2 Before 시연용)
+│   ├── service/                     TradeService, TradeServiceNaive (ADR-2 Before 시연용)
 │   ├── domain/                      Trade, TradeStatus
 │   ├── repository/                  TradeRepository
-│   ├── dto/                         TradeReserveRequest, TradeResponse, TradeConfirmResponse
+│   ├── dto/                         TradeReserveRequest, TradeResponse
 │   └── config/                      RetryConfig (@EnableRetry — trade 도메인 종속)
 ├── chat/                            채팅 (ADR-3)
 │   ├── controller/                  ChatRoomController (REST), ChatMessageController (@MessageMapping)
@@ -133,21 +137,25 @@ public class TradeService {
 
 **엔티티 연관 (현실)**: 기존 5개 도메인은 `@ManyToOne` 으로 다른 도메인 엔티티를 참조합니다 (`ChatRoom.buyer: User` 등 7곳). 처음엔 "ID 만" 을 규칙으로 적었으나 코드가 따르지 않았고, 2026-10-30 점검에서 발견해 문서를 현실에 맞췄습니다 — [ADR-1 에러 상황 4](../adr/001-modular-monolith.md). 신규 도메인 (`assist`) 은 ID 값만 참조합니다.
 
-### 규칙 3: Cross-domain 흐름은 별도 Service
+### 규칙 3: Cross-domain 흐름은 도메인 위의 조율자에
 
-여러 도메인을 묶는 비즈니스 흐름 (예: 거래 확정 = 결제 + 거래 상태 전환) 은 한 도메인 안에 둠 — 그 흐름의 비즈니스 owner.
+여러 도메인을 묶는 비즈니스 흐름 (예: 거래 확정 = 결제 + 거래 상태 전환) 은 `saga` 패키지에 둠. 한 도메인 안에 두면 순환이 생길 수 있음 ([ADR-1 에러 상황 2](../adr/001-modular-monolith.md)).
+
+```
+saga → trade, payment
+payment → trade
+```
 
 예 — `TradeSagaService`:
-- `trade.service` 패키지에 둠 (거래가 비즈니스 owner)
-- `paymentService.charge()` 와 `tradeService.confirm()` 을 조율
-- payment 도메인은 SDK 처럼 호출만 됨 — 자기 트랜잭션만 책임
+- `saga.service` 패키지에 둠. 엔티티와 repository 는 두지 않음
+- `tradeService.getTradeOfBuyer()`, `paymentService.charge()`, `tradeService.confirm()` 을 조율
+- 각 도메인은 자기 트랜잭션만 책임. 어떤 도메인도 `saga` 를 모름
 
 ```java
-// trade/service/TradeSagaService.java
+// saga/service/TradeSagaService.java
 public class TradeSagaService {
-    private final TradeRepository tradeRepository;
-    private final TradeService tradeService;       // 같은 도메인
-    private final PaymentService paymentService;   // 다른 도메인 (Cross-domain 의존 — Saga 의 특권)
+    private final TradeService tradeService;
+    private final PaymentService paymentService;
 
     public TradeConfirmResponse confirm(Long buyerId, Long tradeId) {
         // ... T0/T1/T2/T1' 흐름
@@ -155,13 +163,13 @@ public class TradeSagaService {
 }
 ```
 
-→ "Saga 클래스" 자체가 cross-domain 의존을 명시적으로 격리하는 역할. 다른 일반 Service 는 자기 도메인 안에서만 동작.
+→ 여러 도메인을 함께 조율하는 책임을 `saga` 에 모은다. 일반 Service 도 필요하면 다른 도메인 service 를 호출하되, 순환은 `ArchitectureTest` 가 막는다.
 
 ---
 
 ## 규칙 강제 — `ArchitectureTest` (ArchUnit)
 
-[ArchitectureTest](../../src/test/java/com/portfolio/used_trade/architecture/ArchitectureTest.java) 의 4개 규칙. 도메인 이름을 나열하지 않고 패키지 패턴으로 써서, 도메인이 늘어도 파일이 바뀌지 않는다.
+[ArchitectureTest](../../src/test/java/com/portfolio/used_trade/architecture/ArchitectureTest.java) 의 5개 규칙. 도메인 이름을 나열하지 않고 패키지 패턴으로 써서, 도메인이 늘어도 파일이 바뀌지 않는다.
 
 | 규칙 | 근거 |
 |---|---|
@@ -169,9 +177,10 @@ public class TradeSagaService {
 | 다른 도메인 repository 의존 금지 | 규칙 2, ADR-1 에러 상황 3 |
 | common → 도메인 의존 금지 | 규칙 1 |
 | assist 는 다른 도메인 엔티티 의존 금지 (ID 값만) | ADR-1 에러 상황 4 |
+| 최상위 패키지 사이 순환 금지 | 규칙 3, ADR-1 에러 상황 2 |
 
 - 규칙은 **ADR 에 경계 결정이 생길 때만** 추가한다 (스타일·이름 규칙은 넣지 않음)
-- 검증 : 일부러 위반 클래스 3개를 넣어 4개 규칙이 모두 실패하는 것을 확인 후 제거 (2026-10-31)
+- 검증 : 일부러 위반 클래스 3개를 넣어 처음 4개 규칙이 모두 실패하는 것을 확인 후 제거 (2026-10-31). 순환 규칙은 실제 trade ↔ payment 순환에서 실패하고, `saga` 분리 후 통과함을 확인 (2026-11-05)
 
 ---
 
@@ -285,7 +294,7 @@ public record ApiResponse<T>(
 2. 다른 도메인 Repository 직접 주입 금지 — `ProductService.getProduct(id)` 처럼 소유 도메인 Service 를 거침. 조회·NOT_FOUND 처리는 소유 도메인 책임.
 3. Cross-domain 흐름은 Saga 클래스 같은 별도 Service 에 격리 — 그 흐름의 비즈니스 owner 도메인 안에 둠.
 
-솔직히 처음엔 '엔티티는 ID 만 참조' 도 규칙으로 적었는데 코드가 `@ManyToOne` 으로 다른 도메인 엔티티를 들고 있었고, Repository 직접 주입도 4곳 있었어요. 문서로만 둔 규칙이라 어긋나도 몰랐던 거죠. 점검해서 Repository 는 소유 Service 경유로, trade 가 상품 상태를 직접 바꾸던 것도 ProductService 로 옮겼고 (같은 트랜잭션에 합류하니 @Version 검사는 그대로 — 동시성 테스트로 확인), 엔티티 연관은 전환 비용 대비 이득이 작아 유지하고 문서를 현실에 맞췄습니다. 그래서 ArchUnit 으로 경계 규칙 4개를 테스트에 넣었어요. 도메인 이름을 나열하지 않고 패키지 패턴으로 써서 도메인이 늘어도 규칙은 그대로고, 일부러 위반을 넣어 실제로 실패하는 것까지 확인했습니다."
+솔직히 처음엔 '엔티티는 ID 만 참조' 도 규칙으로 적었는데 코드가 `@ManyToOne` 으로 다른 도메인 엔티티를 들고 있었고, Repository 직접 주입도 4곳 있었어요. 문서로만 둔 규칙이라 어긋나도 몰랐던 거죠. 점검해서 Repository 는 소유 Service 경유로, trade 가 상품 상태를 직접 바꾸던 것도 ProductService 로 옮겼고 (같은 트랜잭션에 합류하니 @Version 검사는 그대로 — 동시성 테스트로 확인), 엔티티 연관은 전환 비용 대비 이득이 작아 유지하고 문서를 현실에 맞췄습니다. 그래서 ArchUnit 으로 경계 규칙을 테스트에 넣었어요. 도메인 이름을 나열하지 않고 패키지 패턴으로 써서 도메인이 늘어도 규칙은 그대로고, 일부러 위반을 넣어 실제로 실패하는 것까지 확인했습니다. 나중에 순환 금지 규칙을 넣자 trade ↔ payment 순환이 드러나서, Saga 를 별도 패키지로 분리해 해결했습니다."
 
 ### Q. "왜 SecurityConfig 가 common 이 아니라 user 안에 있어요?"
 

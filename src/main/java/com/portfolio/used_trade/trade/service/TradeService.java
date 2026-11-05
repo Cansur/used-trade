@@ -137,6 +137,17 @@ public class TradeService {
     // ---------- Saga 단계용 노출 메서드 (TradeSagaService 가 호출) ----------
 
     /**
+     * 구매자 본인의 거래 조회 — Saga T0 단계.
+     *
+     * @throws BusinessException {@link ErrorCode#TRADE_NOT_FOUND}
+     * @throws BusinessException {@link ErrorCode#NOT_PRODUCT_OWNER} buyer 불일치
+     */
+    @Transactional(readOnly = true)
+    public Trade getTradeOfBuyer(Long buyerId, Long tradeId) {
+        return loadOwnedByBuyer(tradeId, buyerId);
+    }
+
+    /**
      * 거래 확정 — Saga T2 단계. RESERVED → CONFIRMED.
      *
      * <p>도메인 가드 ({@link Trade#confirm()}) 가 RESERVED 외 상태에서 호출 시

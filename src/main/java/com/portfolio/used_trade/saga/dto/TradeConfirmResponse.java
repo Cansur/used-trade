@@ -1,6 +1,7 @@
-package com.portfolio.used_trade.trade.dto;
+package com.portfolio.used_trade.saga.dto;
 
 import com.portfolio.used_trade.payment.dto.PaymentResponse;
+import com.portfolio.used_trade.trade.dto.TradeResponse;
 
 /**
  * Saga confirm() 의 성공 응답 — 거래 + 결제 결과를 한 번에.
