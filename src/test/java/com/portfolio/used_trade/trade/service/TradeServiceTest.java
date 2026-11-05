@@ -190,6 +190,43 @@ class TradeServiceTest {
     }
 
     @Nested
+    @DisplayName("getTradeOfBuyer()")
+    class GetTradeOfBuyer {
+
+        @Test
+        @DisplayName("구매자 본인이면 거래를 돌려준다")
+        void buyer_returnsTrade() {
+            Trade trade = Trade.reserve(makeProduct(ProductStatus.TRADING), buyer);
+            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+
+            assertThat(tradeService.getTradeOfBuyer(200L, 1000L)).isSameAs(trade);
+        }
+
+        @Test
+        @DisplayName("구매자가 아니면 NOT_PRODUCT_OWNER")
+        void notBuyer_throws() {
+            Trade trade = Trade.reserve(makeProduct(ProductStatus.TRADING), buyer);
+            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+
+            assertThatThrownBy(() -> tradeService.getTradeOfBuyer(999L, 1000L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.NOT_PRODUCT_OWNER);
+        }
+
+        @Test
+        @DisplayName("거래가 없으면 TRADE_NOT_FOUND")
+        void missing_throws() {
+            given(tradeRepository.findById(1000L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> tradeService.getTradeOfBuyer(200L, 1000L))
+                    .isInstanceOf(BusinessException.class)
+                    .extracting(e -> ((BusinessException) e).getErrorCode())
+                    .isEqualTo(ErrorCode.TRADE_NOT_FOUND);
+        }
+    }
+
+    @Nested
     @DisplayName("cancel()")
     class Cancel {
 

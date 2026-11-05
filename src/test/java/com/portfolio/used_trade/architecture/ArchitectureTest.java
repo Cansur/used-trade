@@ -19,6 +19,7 @@ import java.util.regex.Pattern;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
+import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
 /**
  * ADR-1 의 경계 규칙을 테스트로 강제한다.
@@ -79,6 +80,14 @@ class ArchitectureTest {
         noClasses().that().resideInAPackage(BASE + "." + ASSIST + "..")
                 .should().dependOnClassesThat(areEntitiesOfAnotherDomainThan(ASSIST))
                 .allowEmptyShould(true)   // assist 패키지가 생기기 전에도 통과
+                .check(MAIN_CLASSES);
+    }
+
+    @Test
+    @DisplayName("최상위 패키지 사이에 순환 의존이 없다")
+    void noCyclesBetweenTopLevelPackages() {
+        slices().matching(BASE + ".(*)..")
+                .should().beFreeOfCycles()
                 .check(MAIN_CLASSES);
     }
 

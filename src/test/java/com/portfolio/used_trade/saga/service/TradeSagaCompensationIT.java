@@ -1,4 +1,4 @@
-package com.portfolio.used_trade.trade.service;
+package com.portfolio.used_trade.saga.service;
 
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;

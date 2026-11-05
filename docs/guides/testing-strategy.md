@@ -1,6 +1,6 @@
 # 테스트 전략 가이드
 
-> 156 테스트의 분류 / 도구 / 의사결정. 면접 답변: "테스트 어떻게 짜셨어요?"
+> 160 테스트의 분류 / 도구 / 의사결정. 면접 답변: "테스트 어떻게 짜셨어요?"
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 지표 | 값 |
 |---|---|
-| 총 테스트 메서드 | **156** (`./gradlew test` 기준) |
+| 총 테스트 메서드 | **160** (`./gradlew test` 기준) |
 | 실패 | **0** |
 | 무시 (ignored) | 0 |
 | 실행 시간 | 40초 |
@@ -21,10 +21,11 @@
 |---|---|
 | user | 41 |
 | product | 43 |
-| trade | 33 |
+| saga | 7 |
+| trade | 29 |
 | chat | 23 |
 | payment | 11 |
-| architecture (ArchUnit) | 4 |
+| architecture (ArchUnit) | 5 |
 | 컨텍스트 로드 (`UsedTradeApplicationTests`) | 1 |
 
 ---
@@ -40,7 +41,7 @@
 | **WebSocketStompClient** | STOMP 통합 테스트 (chat 도메인) |
 | **SpringApplicationBuilder** | 같은 테스트 안에서 두 번째 JVM 인스턴스 시동 (cross-instance 시연) |
 | **JdbcTemplate** | 벤치마크의 raw SQL 측정 (JPA 오버헤드 회피) |
-| **ArchUnit** | 계층·도메인 경계 규칙 강제 (`ArchitectureTest`, 4개) — 문서로만 둔 규칙이 코드와 어긋났던 경험 (ADR-1 에러 상황 4) |
+| **ArchUnit** | 계층·도메인 경계 규칙 강제 (`ArchitectureTest`, 5개) — 문서로만 둔 규칙이 코드와 어긋났던 경험 (ADR-1 에러 상황 4) |
 
 **의도적으로 안 쓴 것**:
 - **TestContainers**: 로컬 / CI 에서 `docker-compose` 가 항상 MySQL + Redis 띄워두는 워크플로우라 TestContainers 의 가치가 작음. CI 가 docker compose up 으로 인프라 띄움. → 테스트 cycle ~40초 (TestContainers 면 컨테이너 시동 시간 추가)
@@ -51,7 +52,7 @@
 
 ## 분류 — 단위 vs 통합
 
-### 단위 테스트 (145개)
+### 단위 테스트 (149개)
 
 **도메인 단위** — 엔티티의 도메인 메서드 / 상태 전이 가드 / 정적 팩토리:
 
@@ -196,7 +197,7 @@ JaCoCo 같은 line coverage 도구는 **안 적용**. 이유:
 
 - **Coverage % 목표** 는 안티패턴 — 의미 없는 getter 테스트로 숫자 끌어올리는 게 가능
 - 본 프로젝트는 **시나리오 커버리지 우선** — 각 ADR 의 Before/After + 도메인 메서드의 가드 / 분기 / 상태 전이가 다 테스트됨
-- 156 테스트 모두 의미 있는 시나리오 (의도된 결함 입증 / 보호 입증 / 분기 / 가드)
+- 160 테스트 모두 의미 있는 시나리오 (의도된 결함 입증 / 보호 입증 / 분기 / 가드)
 
 **언제 JaCoCo 도입할까**:
 - 팀 협업 시작 → 새 코드의 커버리지 강제
@@ -233,7 +234,7 @@ docker compose ps   # mysql / redis 모두 healthy
 
 ### Q. "테스트 어떻게 구성하셨어요?"
 
-**A**: "156 테스트 (단위 + 통합) 모두 통과. 도메인별로 단위 테스트 (Mockito) + 통합 테스트 (`@SpringBootTest`) 가르고, 통합은 10개 파일로 ADR 의 가치 입증에 집중:
+**A**: "160 테스트 (단위 + 통합) 모두 통과. 도메인별로 단위 테스트 (Mockito) + 통합 테스트 (`@SpringBootTest`) 가르고, 통합은 10개 파일로 ADR 의 가치 입증에 집중:
 - ADR-2 동시성 — Naive (Before) / Concurrency (After) / Load (정량)
 - Saga 보상 — `TradeSagaCompensationIT`
 - 거래-상품 트랜잭션 — `TradeProductTransactionIT`
@@ -248,7 +249,7 @@ docker compose ps   # mysql / redis 모두 healthy
 
 ### Q. "테스트 커버리지 % 는 얼마예요?"
 
-**A**: "JaCoCo 등 line coverage 도구 안 썼습니다. **Coverage % 가 안티패턴 가능성** 때문 — getter 테스트로 숫자 부풀리기 가능. 본 프로젝트는 **시나리오 커버리지** 우선 — 각 ADR 의 Before/After, 도메인 메서드의 가드 / 분기 / 상태 전이가 다 테스트됨. 156 테스트 모두 의미 있는 시나리오. 팀 협업 시작하면 새 코드 강제용으로 JaCoCo 도입 검토."
+**A**: "JaCoCo 등 line coverage 도구 안 썼습니다. **Coverage % 가 안티패턴 가능성** 때문 — getter 테스트로 숫자 부풀리기 가능. 본 프로젝트는 **시나리오 커버리지** 우선 — 각 ADR 의 Before/After, 도메인 메서드의 가드 / 분기 / 상태 전이가 다 테스트됨. 160 테스트 모두 의미 있는 시나리오. 팀 협업 시작하면 새 코드 강제용으로 JaCoCo 도입 검토."
 
 ### Q. "Saga 보상 어떻게 테스트했나요?"
 

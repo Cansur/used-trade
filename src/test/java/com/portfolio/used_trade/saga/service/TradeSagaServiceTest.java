@@ -1,4 +1,4 @@
-package com.portfolio.used_trade.trade.service;
+package com.portfolio.used_trade.saga.service;
 
 import com.portfolio.used_trade.common.exception.BusinessException;
 import com.portfolio.used_trade.common.exception.ErrorCode;
@@ -9,9 +9,9 @@ import com.portfolio.used_trade.product.domain.Category;
 import com.portfolio.used_trade.product.domain.Product;
 import com.portfolio.used_trade.trade.domain.Trade;
 import com.portfolio.used_trade.trade.domain.TradeStatus;
-import com.portfolio.used_trade.trade.dto.TradeConfirmResponse;
+import com.portfolio.used_trade.saga.dto.TradeConfirmResponse;
 import com.portfolio.used_trade.trade.dto.TradeResponse;
-import com.portfolio.used_trade.trade.repository.TradeRepository;
+import com.portfolio.used_trade.trade.service.TradeService;
 import com.portfolio.used_trade.user.domain.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +24,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -50,7 +49,6 @@ import static org.mockito.Mockito.verify;
 @DisplayName("TradeSagaService 단위 테스트")
 class TradeSagaServiceTest {
 
-    @Mock private TradeRepository tradeRepository;
     @Mock private TradeService tradeService;
     @Mock private PaymentService paymentService;
 
@@ -84,7 +82,7 @@ class TradeSagaServiceTest {
         @Test
         @DisplayName("PG PAID → trade.confirm() 호출, CONFIRMED + payment 응답")
         void pgPaid_callsConfirmAndReturns() {
-            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+            given(tradeService.getTradeOfBuyer(200L, 1000L)).willReturn(trade);
             PaymentResponse paid = new PaymentResponse(
                     777L, 1000L, 1_200_000L, PaymentStatus.PAID, "MOCK-TX-001", LocalDateTime.now());
             given(paymentService.charge(trade)).willReturn(paid);
@@ -102,7 +100,7 @@ class TradeSagaServiceTest {
         @Test
         @DisplayName("PG FAILED → trade.cancel() 보상 호출 + PAYMENT_FAILED throw")
         void pgFailed_compensatesWithCancel() {
-            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+            given(tradeService.getTradeOfBuyer(200L, 1000L)).willReturn(trade);
             PaymentResponse failed = new PaymentResponse(
                     777L, 1000L, 1_200_000L, PaymentStatus.FAILED, null, LocalDateTime.now());
             given(paymentService.charge(trade)).willReturn(failed);
@@ -120,7 +118,8 @@ class TradeSagaServiceTest {
         @Test
         @DisplayName("buyer 불일치 → NOT_PRODUCT_OWNER, payment 호출 없음")
         void buyerMismatch_throwsBeforePayment() {
-            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+            given(tradeService.getTradeOfBuyer(999L, 1000L))
+                    .willThrow(new BusinessException(ErrorCode.NOT_PRODUCT_OWNER));
 
             assertThatThrownBy(() -> tradeSagaService.confirm(999L, 1000L))
                     .isInstanceOf(BusinessException.class)
@@ -134,7 +133,8 @@ class TradeSagaServiceTest {
         @Test
         @DisplayName("trade 부재 → TRADE_NOT_FOUND, payment 호출 없음")
         void tradeMissing_throws() {
-            given(tradeRepository.findById(1000L)).willReturn(Optional.empty());
+            given(tradeService.getTradeOfBuyer(200L, 1000L))
+                    .willThrow(new BusinessException(ErrorCode.TRADE_NOT_FOUND));
 
             assertThatThrownBy(() -> tradeSagaService.confirm(200L, 1000L))
                     .isInstanceOf(BusinessException.class)
@@ -147,7 +147,7 @@ class TradeSagaServiceTest {
         @Test
         @DisplayName("PG FAILED + 보상도 실패 → 보상 예외는 삼키고 PAYMENT_FAILED 로 통일 throw")
         void compensationItselfFails_stillThrowsPaymentFailed() {
-            given(tradeRepository.findById(1000L)).willReturn(Optional.of(trade));
+            given(tradeService.getTradeOfBuyer(200L, 1000L)).willReturn(trade);
             PaymentResponse failed = new PaymentResponse(
                     777L, 1000L, 1_200_000L, PaymentStatus.FAILED, null, LocalDateTime.now());
             given(paymentService.charge(trade)).willReturn(failed);

@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>책임:
  * <ul>
  *   <li>{@link #charge(Trade)} — Mock PG 호출 + Payment row 영속화 (PAID 또는 FAILED).
- *       Saga {@link com.portfolio.used_trade.trade.service.TradeSagaService} 가 호출.</li>
+ *       Saga ({@code TradeSagaService}) 가 호출.</li>
  *   <li>중복 결제 차단 — 같은 trade 의 Payment 이미 있으면 {@link ErrorCode#PAYMENT_ALREADY_PROCESSED}.</li>
  * </ul>
  *

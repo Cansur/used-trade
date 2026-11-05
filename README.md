@@ -73,7 +73,8 @@ AWS 배포 : [docs/deploy/aws-setup.md](docs/deploy/aws-setup.md)
 com.portfolio.used_trade/
 ├── user/      회원 (가입 / 로그인 / refresh / 로그아웃)
 ├── product/   상품 (CRUD + 커서 페이징)
-├── trade/     거래 (낙관적 락 + Saga)
+├── saga/      도메인 간 흐름 조율 (거래 확정 Saga)
+├── trade/     거래 (낙관적 락)
 ├── chat/      채팅 (STOMP + Redis Pub/Sub)
 ├── payment/   결제 (Mock PG)
 └── common/    config / exception / response / base entity
