@@ -19,7 +19,7 @@
 > **작업 전 반드시 [docs/index.md](docs/index.md) → [roadmap](docs/roadmap.md) → [todo](docs/todo.md) 를 먼저 읽는다.**
 > 작업이 끝나면 [docs/policies.md](docs/policies.md) 1절대로 todo / status 를 같은 커밋에서 갱신한다.
 
-- **단계**: Phase 1, 1.5 (로컬 실행 복구) 완료. 순서: **2 AI 녹이기 (진행 중, SPEC-3 검토)** → 3 PG 연동 + Outbox → AWS 재배포 ([roadmap](docs/roadmap.md))
+- **단계**: Phase 1, 1.5 (로컬 실행 복구) 완료. 순서: **2 AI 녹이기 (진행 중, 명세 완료 → DEV-1 부터 구현)** → 3 PG 연동 + Outbox → AWS 재배포 ([roadmap](docs/roadmap.md))
 - **테스트**: 코드 변경 없이 환경(DB, Docker 등)만 확인할 땐 `./gradlew test --rerun` — 그냥 `test` 는 입력이 그대로면 UP-TO-DATE 로 건너뜀
 - **다음 할 일**: [docs/todo.md](docs/todo.md) 의 "진행 중" → "대기" 순서
 - **AWS**: cleanup 완료 — 평소 정지 상태. 시연 시 [docs/deploy/aws-setup.md](docs/deploy/aws-setup.md) Step 7+8 재실행 (~15분)

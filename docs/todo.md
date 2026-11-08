@@ -8,9 +8,6 @@
 
 ## 진행 중
 
-- [ ] **SPEC-3** QA 테스트 리스트 — [specs/assist-qa.md](specs/assist-qa.md) 초안 (A~L 12개 그룹), 사람 검토 대기. 미결 2건: A3 설명 없이 제목만 허용 여부, F3 키워드 겹침 규칙 ("기타" 는 실제로 한 카테고리뿐. 실제 겹침은 전집, 가방 ⊂ 강아지가방, 유모차 ⊂ 강아지유모차·펫유모차)
-
-
 - [ ] **WIKI-4** Obsidian 에서 `docs/` 폴더를 볼트로 열기 + 설정 → 파일 및 링크 → "[[위키링크]] 사용" 끄기 (사람)
 
 
@@ -29,7 +26,7 @@
 - [ ] **DEV-2** 테스트용 `ControllableLlmClient` — 지연 / 타임아웃 / 깨진 응답 주입
 - [ ] **DEV-3** 응답 검증 — JSON 스키마 + categoryId 가 DB 활성 카테고리인지
 - [ ] **DEV-4** 타임아웃 + 재시도 + 서킷브레이커 (Resilience4j 검토)
-- [ ] **DEV-5** 폴백 — 키워드 규칙 카테고리 + DB 기반 가격 범위
+- [ ] **DEV-5** 폴백 — 키워드 규칙 카테고리 + DB 기반 가격 범위. 겹침 규칙은 [ADR-007](adr/007-listing-assist.md) 4절. 함께 정할 것: 매칭 범위 (제목만 / 제목 + 설명), 공백 처리 ("iPhone 15" 미매칭), 일반적인 키워드 정리 ("세트" 때문에 "레고 세트" → `null`), 품목 없는 키워드 ("아이폰" 단독 미매칭)
 - [ ] ~~**DEV-6** 비동기 추천 흐름 (요청 → 결과 전달)~~ — 취소: 동기 + 타임아웃 + 폴백으로 결정 (assist-spec 2-1)
 - [ ] **DEV-12** 동기 추천 API + 가상 스레드 활성화 (`spring.threads.virtual.enabled`)
 - [ ] **DEV-7** Redis 사용자별 호출 제한
@@ -41,7 +38,7 @@
 ### M3. 측정
 
 - [ ] **MEAS-1** 장애 주입 부하 테스트 — 타임아웃·깨진 응답 비율별 등록 성공률, p95
-- [ ] **MEAS-2** 정확도 평가셋 (정답 라벨 상품 100~200개) + 카테고리 정답률
+- [ ] **MEAS-2** 정확도 평가셋 (정답 라벨 상품 100~200개) + 카테고리 정답률. 제목 + 설명 / 제목만 두 조건으로 비교 ([assist-spec](specs/assist-spec.md) 2-2)
 - [ ] **MEAS-3** 캐시 적중률 / 건당 비용 / 호출 제한 동작 측정
 - [ ] **MEAS-4** README 측정표 + ADR-007 결과 반영
 - [ ] **MEAS-5** 실제 LLM 타임아웃 후 재시도 성공률 — 타임아웃 난 요청을 즉시 1회 재시도했을 때 예산 안에 성공하는 비율. 결과로 assist-spec 2-4 재시도 정책 확정. DEV-1 (실제 어댑터) 이후 진행
@@ -89,6 +86,8 @@
 <br>
 
 ## 완료
+
+- [x] **SPEC-3** QA 테스트 리스트 — 근거: [specs/assist-qa.md](specs/assist-qa.md) A~L 12개 그룹. 2026-11-08 미결 2건 결정: 제목만 허용 ([assist-spec](specs/assist-spec.md) 2-2, QA A3), 키워드 겹침은 최장 키워드 → 일치 수 → 동률 `null` ([ADR-007](adr/007-listing-assist.md) 4절, QA F3·F5·F6). `price-anchors.csv` 시뮬레이션으로 규칙 확인, 이때 QA F1 오류 ("아이폰" 단독은 매칭 안 됨) 수정
 
 - [x] **ARCH-2** trade ↔ payment 패키지 순환 해소 + 순환 금지 규칙 — 근거: PR #14 (`d1e41e7`). `saga` 패키지 분리, `ArchitectureTest.noCyclesBetweenTopLevelPackages` 이동 전 실패 / 이동 후 통과, 전체 160 / 0, 확정 API HTTP 확인 (401 / 403 / 200 / 404), [ADR-1](adr/001-modular-monolith.md) 에러 상황 2
 - [x] **ARCH-1** 도메인 경계 정리 — 근거: PR #13 (`3b72ab1`). 다른 도메인 Repository 주입 제거, 상품 상태 전이를 `ProductService` 로 이동 (`Propagation.MANDATORY`), ArchUnit 규칙 4개, `TradeServiceAdviceOrderTest`. 전체 156 / 0, [ADR-1](adr/001-modular-monolith.md) 에러 상황 3·4, [ADR-2](adr/002-optimistic-locking.md) 에러 상황 3
