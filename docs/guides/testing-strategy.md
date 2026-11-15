@@ -254,7 +254,7 @@ docker compose ps   # mysql / redis 모두 healthy
 ### Q. "Saga 보상 어떻게 테스트했나요?"
 
 **A**: "`TradeSagaCompensationIT` 가 핵심:
-1. `ControllablePaymentGateway` (테스트 전용 빈, `@Profile("test")`) 를 만들어 PG 응답 외부에서 조작
+1. `ControllablePaymentGateway` (테스트 전용 빈, `@Primary`) 를 만들어 PG 응답 외부에서 조작
 2. Bob 이 거래 예약 (RESERVED)
 3. PG 를 강제 FAILED 로 설정 후 confirm 호출
 4. 검증: trade.status = CANCELED, product.status = AVAILABLE (복원), payment row = FAILED (영속됨), 응답 = 402 PAYMENT_FAILED
